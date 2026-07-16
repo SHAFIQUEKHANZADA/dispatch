@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   3D Dispatch — light UI design system.
+   A clean, professional light theme for the operational app: soft cool-gray
+   canvas, white cards with subtle elevation, high-contrast slate text. The
+   marketing landing and login pages keep their own dark treatment.
+   ========================================================================== */
+
+:root {
+  --bg: #f5f7fb;            /* app canvas (cool light gray) */
+  --surface: #ffffff;       /* cards */
+  --surface-2: #f1f5fb;     /* raised / hover / subtle fills */
+  --surface-3: #e7edf6;
+  --border: #e4e9f2;
+  --border-strong: #cdd6e4;
+
+  --text: #0f1b2d;          /* slate-900-ish */
+  --text-muted: #526079;    /* slate-600 */
+  --text-faint: #8a97ab;    /* slate-400 */
+
+  --brand: #2563eb;         /* dispatch blue */
+  --brand-hover: #1d4ed8;
+  --good: #16a34a;          /* on-track green (readable on white) */
+  --warn: #d97706;          /* amber-600 */
+  --danger: #dc2626;        /* red-600 */
+  --heat: #e11d48;          /* rose-600 */
+  --info: #0284c7;          /* sky-600 */
+
+  --shadow-card: 0 1px 2px rgba(15, 27, 45, 0.04), 0 1px 3px rgba(15, 27, 45, 0.06);
+  --shadow-hover: 0 4px 12px rgba(15, 27, 45, 0.08), 0 2px 4px rgba(15, 27, 45, 0.06);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-text-faint: var(--text-faint);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-heat: var(--heat);
+  --color-info: var(--info);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+}
+
+html, body { height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* thin, quiet scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 6px;
+  border: 2px solid var(--bg);
+}
+
+/* shared elevation helpers for cards */
+.card-elev { box-shadow: var(--shadow-card); }
+.card-hover { transition: box-shadow .18s ease, transform .18s ease; }
+.card-hover:hover { box-shadow: var(--shadow-hover); transform: translateY(-1px); }
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.animate-pulse-soft { animation: pulse-soft 2s ease-in-out infinite; }
