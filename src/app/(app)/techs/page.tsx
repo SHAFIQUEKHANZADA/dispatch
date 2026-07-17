@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { AvailableTech } from "@/lib/types";
 import { Avatar, Card, Spinner, cn } from "@/components/ui";
-import { fmtTimeShort, pct } from "@/lib/format";
+import { fmtClock, fmtShiftRange, fmtTimeShort, pct } from "@/lib/format";
 
 export default function AvailableTechsPage() {
   const [techs, setTechs] = useState<AvailableTech[]>([]);
@@ -63,11 +63,25 @@ export default function AvailableTechsPage() {
 
 function TechCard({ t }: { t: AvailableTech }) {
   const loadPct = t.capacity_hours > 0 ? (t.assigned_hours / t.capacity_hours) * 100 : 0;
+  const freeHours = Math.max(0, t.capacity_hours - t.assigned_hours);
   const barColor = t.overloaded
     ? "var(--danger)"
     : loadPct > 85
       ? "var(--warn)"
       : "var(--good)";
+
+  // What a dispatcher wants to know at a glance: can I give this person work
+  // right now, and if not, when? Never render a raw/instant-less time here —
+  // shift_start/end are wall-clock strings, not timestamps.
+  const availability = !t.on_shift
+    ? t.shift_start
+      ? `Off shift · returns ${fmtClock(t.shift_start)}`
+      : "Off shift"
+    : t.idle
+      ? "Now"
+      : t.free_at
+        ? fmtTimeShort(t.free_at)
+        : "—";
 
   return (
     <Card
@@ -99,24 +113,34 @@ function TechCard({ t }: { t: AvailableTech }) {
         </div>
       </div>
 
+      {/* Free capacity is what a dispatcher actually shops for — lead with it. */}
       <div className="mt-3">
-        <div className="flex justify-between text-xs text-[var(--text-muted)]">
-          <span>Assigned today</span>
-          <span className="font-mono text-[var(--text)]">
-            {t.assigned_hours} / {t.capacity_hours} hrs
+        <div className="flex items-baseline justify-between">
+          <span className="text-xs text-[var(--text-muted)]">Free capacity</span>
+          <span
+            className={cn(
+              "font-mono text-lg font-bold",
+              freeHours <= 0 ? "text-[var(--danger)]" : "text-[var(--good)]",
+            )}
+          >
+            {freeHours > 0 ? `${freeHours.toFixed(1)} hrs` : "Full"}
           </span>
         </div>
         <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-[var(--surface-3)]">
           <div
-            className="h-full rounded-full"
+            className="h-full rounded-full transition-all"
             style={{ width: `${Math.min(100, loadPct)}%`, background: barColor }}
           />
+        </div>
+        <div className="mt-1 flex justify-between text-[11px] text-[var(--text-faint)]">
+          <span>Assigned {t.assigned_hours} hrs</span>
+          <span>Capacity {t.capacity_hours} hrs</span>
         </div>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-        <Row k="On shift" v={t.on_shift ? `${fmtTimeShort(t.shift_start)}–${fmtTimeShort(t.shift_end)}` : "No"} />
-        <Row k="Free at" v={fmtTimeShort(t.free_at)} />
+        <Row k="Shift" v={fmtShiftRange(t.shift_start, t.shift_end)} />
+        <Row k={t.on_shift ? "Available" : "Status"} v={availability} />
         <Row
           k="Efficiency (T90)"
           v={t.efficiency_t90 !== null ? pct(t.efficiency_t90, 0) : "—"}

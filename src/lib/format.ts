@@ -25,6 +25,35 @@ export function fmtDate(iso: string | null | undefined): string {
   });
 }
 
+/**
+ * Format a plain wall-clock time — "07:00:00" -> "7:00 AM".
+ *
+ * Shift and lunch times come back from the API as a bare time-of-day, NOT a
+ * timestamp. Passing those to `new Date()` yields Invalid Date, so they must
+ * never go through fmtTime(). There is no timezone conversion here on purpose:
+ * a 7 AM shift is 7 AM at the store, not an instant to be shifted.
+ */
+export function fmtClock(time: string | null | undefined): string {
+  if (!time) return "—";
+  const m = /^(\d{1,2}):(\d{2})/.exec(time.trim());
+  if (!m) return "—";
+  const h = Number(m[1]);
+  const min = m[2];
+  if (Number.isNaN(h) || h > 23) return "—";
+  const hour12 = h % 12 || 12;
+  const ampm = h < 12 ? "AM" : "PM";
+  return `${hour12}:${min} ${ampm}`;
+}
+
+/** "7:00 AM – 4:00 PM", or "—" if the schedule isn't set. */
+export function fmtShiftRange(
+  start: string | null | undefined,
+  end: string | null | undefined,
+): string {
+  if (!start || !end) return "Not set";
+  return `${fmtClock(start)} – ${fmtClock(end)}`;
+}
+
 export function vehicleLabel(ro: {
   vehicle_year: number | null;
   vehicle_make: string | null;

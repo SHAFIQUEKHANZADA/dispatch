@@ -59,11 +59,16 @@ export function Button({
     sm: "text-xs px-2.5 py-1.5 rounded-md",
     md: "text-sm px-4 py-2 rounded-lg",
   };
+  // A disabled action must LOOK unavailable, not just faded — a washed-out green
+  // still reads as "go". Gray it out entirely, whatever the variant.
+  const isDisabled = Boolean(rest.disabled);
+  const disabledCls =
+    "bg-[var(--surface-3)] text-[var(--text-faint)] border-[var(--border)] cursor-not-allowed";
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center gap-1.5 border font-medium transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer",
-        variants[variant],
+        "inline-flex items-center justify-center gap-1.5 border font-medium transition",
+        isDisabled ? disabledCls : cn(variants[variant], "cursor-pointer"),
         sizes[size],
         className,
       )}

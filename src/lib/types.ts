@@ -212,6 +212,9 @@ export interface Dashboard {
     est_hours: number;
     reason: string;
   }[];
+  promise_total: number;
+  promise_protected: number;
+  promise_at_risk: number;
   hours_sold_today: number;
   capacity_hours_today: number;
   guardian: Guardian;

@@ -113,7 +113,22 @@ export default function ScoreboardPage() {
             ≥{data.gates.min_ros_to_rank} ROs or ≥{data.gates.min_flagged_hours_to_rank} flagged hrs
           </div>
 
-          <Card className="overflow-x-auto">
+          {/* --- mobile: one card per tech (a 8-column table is unusable on a phone) --- */}
+          <div className="space-y-3 lg:hidden">
+            {data.cards.map((c) => (
+              <ScoreCardMobile
+                key={c.technician_id}
+                card={c}
+                period={period}
+                windows={data.metric_windows}
+                labels={data.labels}
+                onDrill={openDrill}
+              />
+            ))}
+          </div>
+
+          {/* --- desktop: table --- */}
+          <Card className="hidden overflow-x-auto lg:block">
             <table className="w-full min-w-[900px] text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] text-left text-xs text-[var(--text-faint)]">
@@ -166,6 +181,92 @@ export default function ScoreboardPage() {
 
       <DrillModal drill={drill} onClose={() => setDrill(null)} />
     </div>
+  );
+}
+
+// Mobile view of one technician's scorecard. Same numbers, same gates, same
+// click-to-drilldown as the desktop table — just stacked so nothing runs off
+// the screen. A service manager checks this on a phone on the shop floor.
+function ScoreCardMobile({
+  card,
+  period,
+  windows,
+  labels,
+  onDrill,
+}: {
+  card: Scorecard;
+  period: string;
+  windows: Record<string, string[]>;
+  labels: Record<string, string>;
+  onDrill: (techId: string, metric: string) => void;
+}) {
+  const applicable = METRIC_ORDER.filter((m) => windows[m].includes(period));
+  return (
+    <Card className={cn("p-4", !card.qualifies_for_ranking && "opacity-75")}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-semibold">{card.name}</div>
+          <div className="text-xs text-[var(--text-muted)]">
+            {card.skill_level ?? "—"} · {card.team ?? "—"}
+          </div>
+        </div>
+        {!card.qualifies_for_ranking && (
+          <span
+            className="shrink-0 rounded border border-[var(--warn)] px-1.5 py-0.5 text-[9px] font-bold uppercase text-[var(--warn)]"
+            title={card.data_issues.join(" · ")}
+          >
+            Building sample
+          </span>
+        )}
+      </div>
+
+      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
+        {applicable.map((m) => {
+          const mv = card.metrics[m];
+          return (
+            <div key={m} className="flex items-baseline justify-between gap-2">
+              <dt className="text-xs text-[var(--text-faint)]">{labels[m]}</dt>
+              <dd>
+                {!mv || !mv.available ? (
+                  <span
+                    className="cursor-help text-xs text-[var(--warn)]"
+                    title={mv?.issue ?? "unavailable"}
+                  >
+                    ⚠ n/a
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => onDrill(card.technician_id, m)}
+                    className="font-mono text-sm font-semibold tabular-nums text-[var(--text)] underline decoration-dotted underline-offset-2"
+                    title={`${mv.numerator} ÷ ${mv.denominator} — tap for source ROs`}
+                  >
+                    {mv.value?.toFixed(1)}
+                    {mv.unit === "percent" ? "%" : ""}
+                  </button>
+                )}
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+
+      <div className="mt-3 flex justify-between border-t border-[var(--border)] pt-2 text-[11px] text-[var(--text-muted)]">
+        <span>
+          ROs <span className="font-mono text-[var(--text)]">{card.ro_count}</span>
+        </span>
+        <span>
+          CP / Warranty{" "}
+          <span className="font-mono text-[var(--text)]">
+            {card.cp_flagged_hours} / {card.warranty_flagged_hours}
+          </span>{" "}
+          hrs
+        </span>
+      </div>
+
+      {card.data_issues.length > 0 && (
+        <div className="mt-2 text-[11px] text-[var(--warn)]">⚠ {card.data_issues[0]}</div>
+      )}
+    </Card>
   );
 }
 

@@ -77,12 +77,16 @@ export function ROCard({
       <div className="border-t border-[var(--border)] bg-[var(--surface-2)]/40 px-4 py-3">
         <div className="mb-2 flex items-center justify-between">
           <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-faint)]">
-            Recommended Technicians
+            {ranking === null ? "Technician ranking" : "Recommended Technicians"}
           </span>
-          <span className="text-[10px] text-[var(--text-faint)]">Click a score to see why</span>
+          {ranking !== null && (
+            <span className="text-[10px] text-[var(--text-faint)]">Click a score to see why</span>
+          )}
         </div>
 
-        {top.length === 0 ? (
+        {ranking === null ? (
+          <NotRanked status={ro.status} />
+        ) : top.length === 0 ? (
           <NoEligible ranking={ranking} />
         ) : (
           <div className="space-y-1.5">
@@ -172,6 +176,31 @@ function TechRow({
       <Button size="sm" variant="primary" onClick={onDispatch}>
         Dispatch
       </Button>
+    </div>
+  );
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  OPEN: "Open",
+  PENDING_AUTHORIZATION: "Pending Authorization",
+  WAITING_ON_PARTS: "Waiting on Parts",
+  IN_PROGRESS: "In Progress",
+  COMPLETED: "Completed",
+};
+
+// An RO that isn't Ready to Dispatch is deliberately NOT ranked — recommending a
+// tech for a job that's still waiting on parts or authorization is advice nobody
+// can act on. Say that plainly instead of implying nobody is eligible.
+function NotRanked({ status }: { status: string }) {
+  return (
+    <div className="rounded-lg border border-dashed border-[var(--border-strong)] bg-[var(--surface-2)]/60 px-3 py-3 text-center">
+      <div className="text-sm font-medium text-[var(--text-muted)]">
+        Not ranked yet — this RO is{" "}
+        <span className="text-[var(--text)]">{STATUS_LABEL[status] ?? status}</span>
+      </div>
+      <div className="mt-1 text-[11px] text-[var(--text-faint)]">
+        Technicians are ranked once the RO moves to <strong>Ready to Dispatch</strong>.
+      </div>
     </div>
   );
 }

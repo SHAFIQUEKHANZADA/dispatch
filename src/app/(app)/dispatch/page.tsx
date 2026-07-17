@@ -21,6 +21,11 @@ export default function DispatchBoardPage() {
     rank: number;
   } | null>(null);
   const [smartOpen, setSmartOpen] = useState(false);
+  const [nudge, setNudge] = useState<string | null>(null);
+
+  // How many ROs the optimizer could actually plan, regardless of which tab is open.
+  const readyCount =
+    board?.tabs.find((t) => t.key === "READY_TO_DISPATCH")?.count ?? 0;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -64,9 +69,33 @@ export default function DispatchBoardPage() {
               {board?.available_techs ?? "—"}
             </div>
           </div>
-          <Button variant="good" onClick={() => setSmartOpen(true)}>
-            ⚡ Make Smart Decision
-          </Button>
+          {/* Nothing to plan => don't open a modal full of zeros. Say so, in place. */}
+          <div className="relative">
+            <Button
+              variant="good"
+              disabled={readyCount === 0}
+              title={
+                readyCount === 0
+                  ? "No repair orders are ready for dispatch"
+                  : `Plan ${readyCount} ready RO${readyCount === 1 ? "" : "s"} across the shop`
+              }
+              onClick={() => {
+                if (readyCount === 0) {
+                  setNudge("No repair orders are ready for dispatch.");
+                  window.setTimeout(() => setNudge(null), 3500);
+                  return;
+                }
+                setSmartOpen(true);
+              }}
+            >
+              ⚡ Make Smart Decision
+            </Button>
+            {nudge && (
+              <div className="absolute right-0 top-full z-30 mt-2 w-64 rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text-muted)] shadow-lg">
+                {nudge}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

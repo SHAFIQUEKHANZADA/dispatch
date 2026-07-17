@@ -70,7 +70,44 @@ export default function TechniciansSettingsPage() {
         </Button>
       </div>
 
-      <Card className="overflow-hidden">
+      {/* --- mobile: cards. A dispatcher on a phone can't use a wide table. --- */}
+      <div className="space-y-2 md:hidden">
+        {techs.map((t) => (
+          <Card key={t.id} className="p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="font-semibold">{t.name}</div>
+                <div className="text-xs text-[var(--text-muted)]">
+                  {t.skill_level ?? "No level"} · {t.team ?? "No team"}
+                </div>
+              </div>
+              <span
+                className={cn(
+                  "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase",
+                  t.active
+                    ? "bg-emerald-50 text-[var(--good)]"
+                    : "bg-[var(--surface-3)] text-[var(--text-faint)]",
+                )}
+              >
+                {t.active ? "Active" : "Inactive"}
+              </span>
+            </div>
+            <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+              <Pair k="DMS #" v={t.dms_tech_no ?? "—"} mono />
+              <Pair k="Certifications" v={String(t.certs.length)} />
+            </dl>
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <Completeness pct={t.completeness_pct} missing={t.missing_fields} />
+              <Button size="sm" variant="secondary" onClick={() => setEditing(t)}>
+                Edit
+              </Button>
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      {/* --- desktop: table --- */}
+      <Card className="hidden overflow-x-auto md:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[var(--border)] text-left text-xs text-[var(--text-faint)]">
@@ -119,6 +156,16 @@ export default function TechniciansSettingsPage() {
           </tbody>
         </table>
       </Card>
+    </div>
+  );
+}
+
+// One label/value pair inside a mobile card.
+function Pair({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
+  return (
+    <div className="flex justify-between gap-2">
+      <dt className="text-[var(--text-faint)]">{k}</dt>
+      <dd className={cn("text-[var(--text)]", mono && "font-mono")}>{v}</dd>
     </div>
   );
 }

@@ -39,6 +39,9 @@ export default function DashboardPage() {
       ? Math.round((data.hours_sold_today / data.capacity_hours_today) * 100)
       : 0;
 
+  const promiseTotal = data.promise_total ?? 0;
+  const promiseProtected = data.promise_protected ?? 0;
+
   return (
     <div className="space-y-6">
       {/* header row */}
@@ -65,15 +68,41 @@ export default function DashboardPage() {
         thresholdHours={data.guardian.staleness_threshold_hours}
       />
 
-      {/* KPI row — each tile links to where you'd act on it */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <Kpi label="Unassigned" value={data.unassigned} tone="warn" href="/dispatch" icon={<IconInbox />} />
-        <Kpi label="Waiting customers" value={data.waiting_customers} tone="info" href="/dispatch" icon={<IconClock />} />
-        <Kpi label="Heat cases" value={data.heat_cases} tone={data.heat_cases ? "danger" : "good"} href="/dispatch" icon={<IconFlame />} />
-        <Kpi label="Techs idle" value={data.techs_idle} tone={data.techs_idle ? "warn" : "good"} href="/techs" icon={<IconUser />} />
-        <Kpi label="Techs overloaded" value={data.techs_overloaded} tone={data.techs_overloaded ? "danger" : "good"} href="/techs" icon={<IconLayers />} />
-        <Kpi label="ROs at risk" value={data.ros_at_risk.length} tone={data.ros_at_risk.length ? "danger" : "good"} href="/dispatch" icon={<IconAlert />} />
-      </div>
+      {/* WORK — what's on the floor. Shown together with the blocked buckets so
+          "6 techs idle" never reads as unexplained: the reason is right here. */}
+      <section>
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-faint)]">
+          Work in the shop
+        </h2>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <Kpi label="Ready to dispatch" value={data.unassigned} tone={data.unassigned ? "warn" : "good"} href="/dispatch" icon={<IconInbox />} />
+          <Kpi label="Pending authorization" value={data.pending_authorization} tone="info" href="/dispatch" icon={<IconClipboard />} sub="blocked — needs customer OK" />
+          <Kpi label="Waiting on parts" value={data.waiting_on_parts} tone="info" href="/dispatch" icon={<IconBox />} sub="blocked — parts not in" />
+          <Kpi label="In progress" value={data.in_progress} tone="good" href="/dispatch" icon={<IconWrench />} />
+          <Kpi label="Open ROs" value={data.open_ros} tone="info" href="/dispatch" icon={<IconFolder />} />
+        </div>
+      </section>
+
+      {/* ATTENTION — the things a manager acts on */}
+      <section>
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-faint)]">
+          Needs attention
+        </h2>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <Kpi label="Waiting customers" value={data.waiting_customers} tone={data.waiting_customers ? "info" : "good"} href="/dispatch" icon={<IconClock />} />
+          <Kpi label="Heat cases" value={data.heat_cases} tone={data.heat_cases ? "danger" : "good"} href="/dispatch" icon={<IconFlame />} />
+          <Kpi label="ROs at risk" value={data.ros_at_risk.length} tone={data.ros_at_risk.length ? "danger" : "good"} href="/dispatch" icon={<IconAlert />} />
+          <Kpi label="Techs idle" value={data.techs_idle} tone={data.techs_idle ? "warn" : "good"} href="/techs" icon={<IconUser />} />
+          <Kpi label="Techs overloaded" value={data.techs_overloaded} tone={data.techs_overloaded ? "danger" : "good"} href="/techs" icon={<IconLayers />} />
+        </div>
+        {data.techs_idle > 0 && data.unassigned === 0 && (
+          <p className="mt-2 text-xs text-[var(--text-muted)]">
+            <span className="font-medium text-[var(--text)]">Why are techs idle?</span>{" "}
+            Nothing is ready to dispatch — {data.pending_authorization} RO(s) await
+            authorization and {data.waiting_on_parts} are waiting on parts.
+          </p>
+        )}
+      </section>
 
       <div className="grid gap-4 lg:grid-cols-3">
         {/* hours sold vs capacity */}
@@ -112,17 +141,44 @@ export default function DashboardPage() {
           </div>
         </Card>
 
-        {/* at-risk ROs */}
+        {/* PROMISE TIMES — the strongest business case: what the shop promised
+            the customer, and whether the plan still protects it. */}
         <Card className="p-5 lg:col-span-2">
           <div className="mb-3 flex items-center justify-between">
-            <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-faint)]">
-              ROs at risk — no eligible tech can still make the promise
-            </div>
-            {data.ros_at_risk.length > 0 && (
-              <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-[var(--danger)]">
-                {data.ros_at_risk.length}
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-faint)]">
+              <span className="text-[var(--brand)]">
+                <IconTarget />
               </span>
-            )}
+              Promise times
+            </div>
+            <Link href="/dispatch" className="text-xs font-medium text-[var(--brand)] hover:underline">
+              Open board →
+            </Link>
+          </div>
+
+          <div className="mb-4 grid grid-cols-3 gap-2">
+            <PromiseStat
+              label="Protected"
+              value={promiseProtected}
+              tone="good"
+              hint="on track to finish before promise"
+            />
+            <PromiseStat
+              label="At risk"
+              value={data.ros_at_risk.length}
+              tone={data.ros_at_risk.length ? "danger" : "good"}
+              hint="no eligible tech can still make it"
+            />
+            <PromiseStat
+              label="Total promised"
+              value={promiseTotal}
+              tone="neutral"
+              hint="open ROs with a promise time"
+            />
+          </div>
+
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-faint)]">
+            {data.ros_at_risk.length > 0 ? "At risk right now" : ""}
           </div>
           {data.ros_at_risk.length === 0 ? (
             <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-4 py-6 text-sm font-medium text-emerald-700">
@@ -205,12 +261,14 @@ function Kpi({
   tone,
   href,
   icon,
+  sub,
 }: {
   label: string;
   value: number;
   tone: "good" | "warn" | "danger" | "info";
   href: string;
   icon: React.ReactNode;
+  sub?: string;
 }) {
   const tones: Record<string, { text: string; chip: string }> = {
     good: { text: "text-[var(--good)]", chip: "bg-emerald-50 text-emerald-600" },
@@ -231,7 +289,72 @@ function Kpi({
         <span className={cn("grid h-7 w-7 place-items-center rounded-lg", t.chip)}>{icon}</span>
       </div>
       <span className={cn("font-mono text-3xl font-bold tracking-tight", t.text)}>{value}</span>
+      {sub && <span className="text-[10px] leading-tight text-[var(--text-faint)]">{sub}</span>}
     </Link>
+  );
+}
+
+function PromiseStat({
+  label,
+  value,
+  tone,
+  hint,
+}: {
+  label: string;
+  value: number;
+  tone: "good" | "danger" | "neutral";
+  hint: string;
+}) {
+  const tones: Record<string, string> = {
+    good: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    danger: "bg-red-50 text-red-700 border-red-200",
+    neutral: "bg-[var(--surface-2)] text-[var(--text)] border-[var(--border)]",
+  };
+  return (
+    <div className={cn("rounded-lg border px-3 py-2.5", tones[tone])} title={hint}>
+      <div className="text-[10px] font-semibold uppercase tracking-wide opacity-70">{label}</div>
+      <div className="font-mono text-2xl font-bold leading-tight">{value}</div>
+    </div>
+  );
+}
+
+function IconClipboard() {
+  return (
+    <svg {...iconProps}>
+      <path d="M9 3h6v3H9zM9 4.5H7a2 2 0 0 0-2 2V19a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6.5a2 2 0 0 0-2-2h-2" />
+    </svg>
+  );
+}
+function IconBox() {
+  return (
+    <svg {...iconProps}>
+      <path d="M21 8v8l-9 5-9-5V8l9-5 9 5z" />
+      <path d="M3 8l9 5 9-5M12 13v8" />
+    </svg>
+  );
+}
+function IconWrench() {
+  return (
+    <svg {...iconProps}>
+      <path d="M14.7 6.3a4 4 0 1 1 5 5L18 13l-6 6-4-4 6-6z" />
+      <path d="M6 18l-2 2" />
+    </svg>
+  );
+}
+function IconFolder() {
+  return (
+    <svg {...iconProps}>
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+    </svg>
+  );
+}
+function IconTarget() {
+  return (
+    <svg {...iconProps} width={18} height={18}>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="5" />
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" />
+    </svg>
   );
 }
 
