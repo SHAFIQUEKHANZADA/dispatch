@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api, API_BASE, ApiError, authHeader } from "@/lib/api";
 import { Button, Card, cn } from "@/components/ui";
+import { MyKaarmaStatus } from "@/components/mykaarma-status";
 
 interface PreviewResp {
   filename: string;
@@ -87,7 +88,18 @@ export default function ImportPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div>
-        <h1 className="text-xl font-semibold">Import DMS Export</h1>
+        <h1 className="text-xl font-semibold">Data Sources</h1>
+        <p className="text-sm text-[var(--text-muted)]">
+          Where 3D Dispatch gets its repair-order data — the live DMS connection, and the
+          CSV import used for onboarding history and as a fallback.
+        </p>
+      </div>
+
+      {/* live DMS connection status */}
+      <MyKaarmaStatus />
+
+      <div className="pt-2">
+        <h2 className="text-lg font-semibold">CSV Import</h2>
         <p className="text-sm text-[var(--text-muted)]">
           Upload the last 90 days of closed ROs. Every dealership&apos;s export is shaped differently,
           so you map the columns before anything is imported. Bad rows are rejected and reported —

@@ -12,7 +12,7 @@ const NAV = [
   { href: "/techs", label: "Available Techs", icon: "◉" },
   { href: "/scoreboard", label: "Scoreboard", icon: "▤" },
   { href: "/settings", label: "Technicians", icon: "⚙" },
-  { href: "/import", label: "Import DMS", icon: "⇪" },
+  { href: "/import", label: "Data Sources", icon: "⇪" },
 ];
 
 function StoreMenu() {
