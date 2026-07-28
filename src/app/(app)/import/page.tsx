@@ -86,7 +86,7 @@ export default function ImportPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
+    <div className="mx-auto max-w-3xl space-y-4 px-5 py-5">
       <div>
         <h1 className="text-xl font-semibold">Data Sources</h1>
         <p className="text-sm text-[var(--text-muted)]">

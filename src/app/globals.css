@@ -73,6 +73,24 @@ body {
   border: 2px solid var(--bg);
 }
 
+/* shared form input — used across settings pages */
+.input {
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
 /* shared elevation helpers for cards */
 .card-elev { box-shadow: var(--shadow-card); }
 .card-hover { transition: box-shadow .18s ease, transform .18s ease; }
@@ -83,3 +101,17 @@ body {
   50% { opacity: 0.55; }
 }
 .animate-pulse-soft { animation: pulse-soft 2s ease-in-out infinite; }
+
+/* blinking dot on the status pills (idle / unplanned / back soon) */
+@keyframes blink-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.25; transform: scale(0.75); }
+}
+.animate-blink { animation: blink-dot 1.4s ease-in-out infinite; }
+
+/* in-progress RO block: a live "working now" pulse */
+@keyframes block-live {
+  0%, 100% { filter: brightness(1); box-shadow: 0 0 0 0 rgba(22,163,74,0.0); }
+  50% { filter: brightness(1.12); box-shadow: 0 0 0 3px rgba(22,163,74,0.25); }
+}
+.animate-live { animation: block-live 2s ease-in-out infinite; }

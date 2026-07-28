@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { Board, BoardRO, Candidate } from "@/lib/types";
 import { Button, GuardianBanner, Spinner } from "@/components/ui";
@@ -8,12 +8,51 @@ import { ROCard } from "@/components/ro-card";
 import { DispatchModal } from "@/components/dispatch-modal";
 import { SmartDecisionModal } from "@/components/smart-decision-modal";
 
+interface Appt {
+  appointment_uuid: string;
+  customer_name: string;
+  company: string | null;
+  phone: string | null;
+  email: string | null;
+  vehicle: string;
+  vin: string | null;
+  license_plate: string | null;
+  mileage: string | number | null;
+  color: string | null;
+  engine: string | null;
+  trim: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  preferred_date: string | null;
+  status: string | null;
+  transport: string | null;
+  service_requested: string | null;
+  internal_notes: string | null;
+  recall: boolean;
+  source: string | null;
+  text_reminder: boolean;
+  advisor_uuid: string | null;
+  order_number: string | null;
+  has_order: boolean;
+  booked_at: string | null;
+}
+interface UpcomingResp {
+  available: boolean;
+  reason?: string;
+  count?: number;
+  appointments: Appt[];
+}
+const UPCOMING = "UPCOMING";
+
 export default function DispatchBoardPage() {
   const [board, setBoard] = useState<Board | null>(null);
   const [tab, setTab] = useState("READY_TO_DISPATCH");
   const [sort, setSort] = useState("flagged_written");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [appts, setAppts] = useState<UpcomingResp | null>(null);
+  const [apptLoading, setApptLoading] = useState(false);
 
   const [dispatchTarget, setDispatchTarget] = useState<{
     ro: BoardRO;
@@ -28,6 +67,7 @@ export default function DispatchBoardPage() {
     board?.tabs.find((t) => t.key === "READY_TO_DISPATCH")?.count ?? 0;
 
   const load = useCallback(async () => {
+    if (tab === UPCOMING) { setLoading(false); return; }  // upcoming tab has its own fetch
     setLoading(true);
     setError(null);
     try {
@@ -46,14 +86,30 @@ export default function DispatchBoardPage() {
     load();
   }, [load]);
 
+  const loadAppts = useCallback(async () => {
+    setApptLoading(true);
+    try {
+      setAppts(await api.get<UpcomingResp>("/mykaarma/appointments/upcoming?days=14"));
+    } catch {
+      setAppts({ available: false, reason: "Could not reach myKaarma.", appointments: [] });
+    } finally {
+      setApptLoading(false);
+    }
+  }, []);
+
+  // fetch appointments up front so the tab count is populated
+  useEffect(() => {
+    loadAppts();
+  }, [loadAppts]);
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 px-5 py-5">
       {/* title row */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Available ROs to Dispatch</h1>
           <p className="text-sm text-[var(--text-muted)]">
-            Pick an RO — techs are ranked by Match Score. Click a score to see why.
+            Pick an RO — techs are ranked by Match Score. Hover a tech to see why.
           </p>
         </div>
         <div className="flex items-center gap-4">
@@ -110,21 +166,38 @@ export default function DispatchBoardPage() {
       {/* tabs + sort */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)]">
         <div className="flex flex-wrap gap-1">
-          {board?.tabs.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`relative -mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition ${
-                tab === t.key
-                  ? "border-[var(--brand)] text-[var(--text)]"
-                  : "border-transparent text-[var(--text-muted)] hover:text-[var(--text)]"
-              }`}
-            >
-              {t.label}
-              <span className="rounded-full bg-[var(--surface-3)] px-1.5 text-[10px] font-mono">
-                {t.count}
-              </span>
-            </button>
+          {board?.tabs.map((t, i) => (
+            <Fragment key={t.key}>
+              <button
+                onClick={() => setTab(t.key)}
+                className={`relative -mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition ${
+                  tab === t.key
+                    ? "border-[var(--brand)] text-[var(--text)]"
+                    : "border-transparent text-[var(--text-muted)] hover:text-[var(--text)]"
+                }`}
+              >
+                {t.label}
+                <span className="rounded-full bg-[var(--surface-3)] px-1.5 text-[10px] font-mono">
+                  {t.count}
+                </span>
+              </button>
+              {/* Upcoming (myKaarma appointments) sits second — right after Open ROs */}
+              {i === 0 && (
+                <button
+                  onClick={() => setTab(UPCOMING)}
+                  className={`relative -mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition ${
+                    tab === UPCOMING
+                      ? "border-[var(--brand)] text-[var(--text)]"
+                      : "border-transparent text-[var(--text-muted)] hover:text-[var(--text)]"
+                  }`}
+                >
+                  Upcoming ROs
+                  <span className="rounded-full bg-[var(--surface-3)] px-1.5 text-[10px] font-mono">
+                    {appts?.count ?? 0}
+                  </span>
+                </button>
+              )}
+            </Fragment>
           ))}
         </div>
         <div className="flex items-center gap-2 pb-2">
@@ -143,34 +216,41 @@ export default function DispatchBoardPage() {
         </div>
       </div>
 
-      {sort === "flagged_written" && (
+      {sort === "flagged_written" && tab !== UPCOMING && (
         <p className="-mt-2 text-[11px] text-[var(--text-faint)]">
           Flagged = customer waiting, heat case, comeback, or manager flag.
         </p>
       )}
 
-      {/* the board */}
-      {loading && <Spinner label="Scoring the board…" />}
-      {error && (
-        <div className="rounded-lg border border-[var(--danger)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--danger)]">
-          {error}
-        </div>
-      )}
-      {board && !loading && board.ros.length === 0 && (
-        <div className="rounded-xl border border-dashed border-[var(--border-strong)] px-4 py-12 text-center text-sm text-[var(--text-muted)]">
-          Nothing in this tab.
-        </div>
-      )}
+      {/* Upcoming appointments (myKaarma) */}
+      {tab === UPCOMING ? (
+        <UpcomingView data={appts} loading={apptLoading} onRefresh={loadAppts} />
+      ) : (
+        <>
+          {/* the board */}
+          {loading && <Spinner label="Scoring the board…" />}
+          {error && (
+            <div className="rounded-lg border border-[var(--danger)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--danger)]">
+              {error}
+            </div>
+          )}
+          {board && !loading && board.ros.length === 0 && (
+            <div className="rounded-xl border border-dashed border-[var(--border-strong)] px-4 py-12 text-center text-sm text-[var(--text-muted)]">
+              Nothing in this tab.
+            </div>
+          )}
 
-      <div className="grid gap-3 xl:grid-cols-2">
-        {board?.ros.map((ro) => (
-          <ROCard
-            key={ro.id}
-            ro={ro}
-            onDispatch={(ro, cand, rank) => setDispatchTarget({ ro, cand, rank })}
-          />
-        ))}
-      </div>
+          <div className="grid gap-3 xl:grid-cols-2">
+            {board?.ros.map((ro) => (
+              <ROCard
+                key={ro.id}
+                ro={ro}
+                onDispatch={(ro, cand, rank) => setDispatchTarget({ ro, cand, rank })}
+              />
+            ))}
+          </div>
+        </>
+      )}
 
       <DispatchModal
         ro={dispatchTarget?.ro ?? null}
@@ -192,6 +272,152 @@ export default function DispatchBoardPage() {
           load();
         }}
       />
+    </div>
+  );
+}
+
+// ------- Upcoming ROs (myKaarma appointments) ------- //
+function fmtT(s: string | null): string {
+  if (!s) return "—";
+  const d = new Date(s.replace(" ", "T"));
+  return isNaN(d.getTime()) ? s : d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+function fmtD(s: string | null): string {
+  if (!s) return "";
+  const d = new Date(s.replace(" ", "T"));
+  return isNaN(d.getTime()) ? s : d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+}
+function dayKey(s: string | null): string {
+  return (s ?? "").split(" ")[0] || "—";
+}
+function apptInitials(name: string): string {
+  return name.split(" ").filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "?";
+}
+
+function UpcomingView({ data, loading, onRefresh }: { data: UpcomingResp | null; loading: boolean; onRefresh: () => void }) {
+  if (loading && !data) return <Spinner label="Reading appointments from myKaarma…" />;
+
+  if (data && !data.available) {
+    return (
+      <div className="rounded-xl border border-dashed border-[var(--border-strong)] px-4 py-10 text-center text-sm text-[var(--text-muted)]">
+        Upcoming appointments aren&apos;t available yet — {data.reason ?? "myKaarma appointment scope not granted."}
+      </div>
+    );
+  }
+
+  const appts = data?.appointments ?? [];
+  // group by day, in chronological order
+  const groups: { key: string; label: string; items: Appt[] }[] = [];
+  for (const a of appts) {
+    const k = dayKey(a.start_time);
+    let g = groups.find((x) => x.key === k);
+    if (!g) { g = { key: k, label: fmtD(a.start_time), items: [] }; groups.push(g); }
+    g.items.push(a);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm text-sky-800">
+        <span>
+          <b>Booked in myKaarma</b> — appointments from the scheduler / voice agent. Each becomes a dispatchable RO when the customer checks in.
+        </span>
+        <Button size="sm" variant="secondary" onClick={onRefresh} disabled={loading}>
+          {loading ? "Refreshing…" : "Refresh"}
+        </Button>
+      </div>
+
+      {appts.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-[var(--border-strong)] px-4 py-12 text-center text-sm text-[var(--text-muted)]">
+          No upcoming appointments booked in myKaarma for the next two weeks.
+        </div>
+      ) : (
+        groups.map((g) => (
+          <div key={g.key}>
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-[var(--text-faint)]">{g.label}</div>
+            <div className="grid gap-2 xl:grid-cols-2">
+              {g.items.map((a) => (
+                <AppointmentCard key={a.appointment_uuid} a={a} />
+              ))}
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+function apptHue(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+  return `hsl(${h} 55% 45%)`;
+}
+
+function AppointmentCard({ a }: { a: Appt }) {
+  const [open, setOpen] = useState(false);
+  const hasVehicle = a.vehicle && a.vehicle !== "Vehicle TBD";
+  const details: [string, ReactNode][] = [];
+  if (a.service_requested) details.push(["Service requested", a.service_requested]);
+  // Vehicle is always shown so it's clear where it lives; details fill in when
+  // the customer selected a vehicle at booking.
+  details.push(["Vehicle", hasVehicle ? a.vehicle : <span className="text-[var(--text-faint)]">Not selected at booking</span>]);
+  if (a.vin) details.push(["VIN", <span className="font-mono">{a.vin}</span>]);
+  if (a.license_plate) details.push(["License plate", a.license_plate]);
+  if (a.mileage) details.push(["Mileage", `${a.mileage} mi`]);
+  if (a.color) details.push(["Color", a.color]);
+  if (a.engine) details.push(["Engine", a.engine]);
+  if (a.trim) details.push(["Trim", a.trim]);
+  if (a.phone) details.push(["Phone", a.phone]);
+  if (a.email) details.push(["Email", a.email]);
+  if (a.company) details.push(["Company", a.company]);
+  if (a.transport) details.push(["Transport", a.transport]);
+  if (a.recall) details.push(["Recall", "Yes"]);
+  if (a.source) details.push(["Booked via", a.source]);
+  if (a.booked_at) details.push(["Booked at", `${fmtD(a.booked_at)} ${fmtT(a.booked_at)}`]);
+  details.push(["Text reminder", a.text_reminder ? "On" : "Off"]);
+  if (a.internal_notes) details.push(["Notes", a.internal_notes]);
+
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-3 px-4 py-3 text-left">
+        <div className="flex w-16 shrink-0 flex-col items-center rounded-lg bg-[var(--surface-2)] px-2 py-1.5">
+          <span className="text-sm font-bold text-[var(--text)]">{fmtT(a.start_time)}</span>
+          <span className="text-[9px] uppercase text-[var(--text-faint)]">arrival</span>
+        </div>
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[11px] font-semibold text-white" style={{ background: apptHue(a.customer_name) }}>
+          {apptInitials(a.customer_name)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-semibold text-[var(--text)]">{a.customer_name}</div>
+          <div className="truncate text-xs text-[var(--text-muted)]">
+            {a.service_requested ? a.service_requested : a.vehicle}
+            {a.vehicle !== "Vehicle TBD" && a.service_requested ? ` · ${a.vehicle}` : ""}
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase text-sky-700">
+            {a.status || "Scheduled"}
+          </span>
+          {a.order_number ? (
+            <span className="font-mono text-[11px] text-[var(--text-muted)]">RO #{a.order_number}</span>
+          ) : (
+            <span className="text-[10px] text-[var(--text-faint)]">not checked in</span>
+          )}
+        </div>
+        <span className={`ml-1 shrink-0 text-[var(--text-faint)] transition-transform ${open ? "rotate-90" : ""}`}>›</span>
+      </button>
+
+      {open && (
+        <div className="border-t border-[var(--border)] px-4 py-3">
+          <dl className="grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
+            {details.map(([k, v], i) => (
+              <div key={i} className="flex justify-between gap-3 border-b border-dashed border-[var(--border)] py-0.5 last:border-0">
+                <dt className="shrink-0 text-xs text-[var(--text-faint)]">{k}</dt>
+                <dd className="min-w-0 truncate text-right text-xs font-medium text-[var(--text)]">{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
     </div>
   );
 }

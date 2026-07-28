@@ -1,185 +1,321 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { TechOptions, Technician } from "@/lib/types";
-import { Button, Card, Spinner, cn } from "@/components/ui";
+import { Button, Spinner, cn } from "@/components/ui";
 import { TechnicianForm } from "@/components/technician-form";
 
-export default function TechniciansSettingsPage() {
-  const [techs, setTechs] = useState<Technician[]>([]);
+interface AseAdded { code: string; label: string; attachment?: string }
+interface Training { label: string; attachment?: string }
+interface SelfRating { label: string; from: number; to: number }
+interface Bio {
+  kind: string;
+  submitted_label: string;
+  ase_current: string[];
+  ase_added: AseAdded[];
+  honda_training?: Training | null;
+  self_ratings: SelfRating[];
+  career_goal?: string;
+  impact?: string;
+  cert_proof?: string;
+}
+interface BioUpdate { id: string; name: string; role_label: string; submitted_label: string; bio: Bio }
+interface RosterTech {
+  id: string;
+  name: string;
+  role_label: string;
+  team_label: string;
+  hourly_rate: number | null;
+  cert_badges: string[];
+  bio_status: string;
+  bio_reviewed_label: string | null;
+  has_pending_bio: boolean;
+}
+
+export default function TechSettingsPage() {
+  const [updates, setUpdates] = useState<BioUpdate[]>([]);
+  const [roster, setRoster] = useState<RosterTech[]>([]);
   const [options, setOptions] = useState<TechOptions | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Technician | "new" | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [acting, setActing] = useState<string | null>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const [t, o] = await Promise.all([
-        api.get<{ technicians: Technician[] }>("/technicians"),
+      const [bu, r, o] = await Promise.all([
+        api.get<{ pending: number; updates: BioUpdate[] }>("/technicians/bio-updates"),
+        api.get<{ technicians: RosterTech[] }>("/technicians"),
         api.get<TechOptions>("/technicians/options"),
       ]);
-      setTechs(t.technicians);
+      setUpdates(bu.updates);
+      setRoster(r.technicians.filter((t) => t.hourly_rate !== null || t.bio_status));
       setOptions(o);
+      // the newest submission opens expanded, like the mockup
+      setExpanded(new Set(bu.updates.slice(0, 1).map((u) => u.id)));
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }
-
-  useEffect(() => {
-    load();
   }, []);
 
-  if (loading) return <Spinner label="Loading technicians…" />;
-  if (error)
-    return (
-      <div className="rounded-lg border border-[var(--danger)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--danger)]">
-        {error}
-      </div>
-    );
+  useEffect(() => { load(); }, [load]);
+
+  async function act(id: string, action: "approve" | "reject" | "request-changes") {
+    setActing(id + action);
+    try {
+      await api.post(`/technicians/${id}/bio/${action}`);
+      await load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      setActing(null);
+    }
+  }
 
   if (editing && options) {
     return (
-      <TechnicianForm
-        technician={editing === "new" ? null : editing}
-        options={options}
-        onCancel={() => setEditing(null)}
-        onSaved={() => {
-          setEditing(null);
-          load();
-        }}
-      />
+      <div className="px-5 py-5">
+        <TechnicianForm
+          technician={editing === "new" ? null : editing}
+          options={options}
+          onCancel={() => setEditing(null)}
+          onSaved={() => { setEditing(null); load(); }}
+        />
+      </div>
     );
   }
 
+  const teams = new Set(roster.map((t) => t.team_label));
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-end justify-between">
+    <div className="px-5 py-5">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Technician Settings</h1>
+          <h1 className="text-2xl font-bold text-[var(--text)]">Tech Settings</h1>
           <p className="text-sm text-[var(--text-muted)]">
-            The system of record for tech capability — the 60–90 minute onboarding session. This
-            data fuels the Match Score; a red completeness bar means a tech can&apos;t be dispatched yet.
+            Manage technician profiles, certifications, schedules — and approve bio updates.
           </p>
         </div>
-        <Button variant="primary" onClick={() => setEditing("new")}>
-          + Add Technician
-        </Button>
+        <Button variant="secondary" onClick={() => setEditing("new")}>+ Add Technician</Button>
       </div>
 
-      {/* --- mobile: cards. A dispatcher on a phone can't use a wide table. --- */}
-      <div className="space-y-2 md:hidden">
-        {techs.map((t) => (
-          <Card key={t.id} className="p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="font-semibold">{t.name}</div>
-                <div className="text-xs text-[var(--text-muted)]">
-                  {t.skill_level ?? "No level"} · {t.team ?? "No team"}
-                </div>
+      {loading && <div className="pt-8"><Spinner label="Loading technicians…" /></div>}
+      {error && (
+        <div className="mb-4 rounded-lg border border-[var(--danger)] bg-red-50 px-4 py-3 text-sm text-[var(--danger)]">{error}</div>
+      )}
+
+      {!loading && (
+        <div className="space-y-6">
+          {/* BIO UPDATES AWAITING APPROVAL */}
+          {updates.length > 0 && (
+            <section>
+              <div className="mb-3 flex items-center gap-2">
+                <h2 className="text-xs font-bold uppercase tracking-widest text-[var(--text)]">Bio Updates Awaiting Your Approval</h2>
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700">{updates.length} Pending</span>
               </div>
-              <span
-                className={cn(
-                  "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase",
-                  t.active
-                    ? "bg-emerald-50 text-[var(--good)]"
-                    : "bg-[var(--surface-3)] text-[var(--text-faint)]",
-                )}
-              >
-                {t.active ? "Active" : "Inactive"}
-              </span>
+              <div className="space-y-3">
+                {updates.map((u) => (
+                  <BioUpdateCard
+                    key={u.id}
+                    u={u}
+                    open={expanded.has(u.id)}
+                    onToggle={() => setExpanded((prev) => { const n = new Set(prev); n.has(u.id) ? n.delete(u.id) : n.add(u.id); return n; })}
+                    onAct={(a) => act(u.id, a)}
+                    busy={acting?.startsWith(u.id) ?? false}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* TECHNICIAN ROSTER */}
+          <section>
+            <div className="mb-3 flex items-center gap-2">
+              <h2 className="text-xs font-bold uppercase tracking-widest text-[var(--text)]">Technician Roster</h2>
+              <span className="text-xs text-[var(--text-faint)]">{roster.length} techs · {teams.size} teams</span>
             </div>
-            <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-              <Pair k="DMS #" v={t.dms_tech_no ?? "—"} mono />
-              <Pair k="Certifications" v={String(t.certs.length)} />
-            </dl>
-            <div className="mt-3 flex items-center justify-between gap-3">
-              <Completeness pct={t.completeness_pct} missing={t.missing_fields} />
-              <Button size="sm" variant="secondary" onClick={() => setEditing(t)}>
-                Edit
-              </Button>
+            <div className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+              <table className="w-full min-w-[900px] text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--border-strong)] text-left text-[11px] font-bold uppercase tracking-wide text-[var(--text-faint)]">
+                    <th className="px-4 py-3">Technician</th>
+                    <th className="px-3 py-3">Role</th>
+                    <th className="px-3 py-3">Team</th>
+                    <th className="px-3 py-3 text-right">$ / Hr</th>
+                    <th className="px-3 py-3">Certifications</th>
+                    <th className="px-3 py-3">Bio Status</th>
+                    <th className="px-3 py-3">Last Reviewed</th>
+                    <th className="px-3 py-3"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {roster.map((t) => (
+                    <tr key={t.id} className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface-2)]/50">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2.5">
+                          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[11px] font-semibold text-white" style={{ background: hue(t.name) }}>{initials(t.name)}</span>
+                          <span className="font-semibold text-[var(--text)]">{t.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-[var(--text-muted)]">{t.role_label}</td>
+                      <td className="px-3 py-3 text-[var(--text-muted)]">{t.team_label}</td>
+                      <td className="px-3 py-3 text-right font-semibold tabular-nums text-[var(--text)]">{t.hourly_rate != null ? `$${t.hourly_rate}` : "—"}</td>
+                      <td className="px-3 py-3">
+                        {t.cert_badges.length === 0 ? (
+                          <span className="text-[var(--text-faint)]">—</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {t.cert_badges.map((c) => <CertBadge key={c} label={c} />)}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase", t.bio_status === "pending" ? "bg-amber-100 text-amber-700" : t.bio_status === "changes_requested" ? "bg-orange-100 text-orange-700" : "bg-emerald-100 text-emerald-700")}>
+                          {t.bio_status === "pending" ? "Pending" : t.bio_status === "changes_requested" ? "Changes Req." : "Approved"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-[var(--text-muted)]">{t.bio_reviewed_label ?? (t.bio_status === "pending" ? "Pending" : "—")}</td>
+                      <td className="px-3 py-3 text-right">
+                        <button onClick={() => setEditing(t as unknown as Technician)} className="text-sm font-semibold text-[var(--brand)] hover:underline">View Bio</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </Card>
-        ))}
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BioUpdateCard({ u, open, onToggle, onAct, busy }: {
+  u: BioUpdate; open: boolean; onToggle: () => void;
+  onAct: (a: "approve" | "reject" | "request-changes") => void; busy: boolean;
+}) {
+  const b = u.bio;
+  return (
+    <div className={cn("overflow-hidden rounded-xl border bg-[var(--surface)]", open ? "border-[var(--border)] border-l-4 border-l-amber-400" : "border-[var(--border)]")}>
+      {/* header row */}
+      <div className="flex items-center gap-3 px-4 py-3.5">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-semibold text-white" style={{ background: hue(u.name) }}>{initials(u.name)}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-base font-bold text-[var(--text)]">{u.name}</span>
+            <span className="text-sm text-[var(--text-muted)]">· {u.role_label}</span>
+          </div>
+          <div className="text-xs text-[var(--text-muted)]">{b.kind} · submitted {b.submitted_label}</div>
+        </div>
+        {open ? (
+          <span className="rounded-md bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-700">Needs Approval</span>
+        ) : (
+          <Button variant="good" size="sm" onClick={onToggle}>Review</Button>
+        )}
       </div>
 
-      {/* --- desktop: table --- */}
-      <Card className="hidden overflow-x-auto md:block">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-[var(--border)] text-left text-xs text-[var(--text-faint)]">
-              <th className="px-3 py-2.5 font-medium">Name</th>
-              <th className="px-3 py-2.5 font-medium">Team</th>
-              <th className="px-3 py-2.5 font-medium">Level</th>
-              <th className="px-3 py-2.5 font-medium">DMS #</th>
-              <th className="px-3 py-2.5 font-medium">Certs</th>
-              <th className="px-3 py-2.5 font-medium">Status</th>
-              <th className="px-3 py-2.5 font-medium">Setup</th>
-              <th className="px-3 py-2.5"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {techs.map((t) => (
-              <tr key={t.id} className="border-b border-[var(--border)]">
-                <td className="px-3 py-2.5 font-medium">{t.name}</td>
-                <td className="px-3 py-2.5 text-[var(--text-muted)]">{t.team ?? "—"}</td>
-                <td className="px-3 py-2.5 text-[var(--text-muted)]">{t.skill_level ?? "—"}</td>
-                <td className="px-3 py-2.5 font-mono text-xs text-[var(--text-muted)]">
-                  {t.dms_tech_no ?? "—"}
-                </td>
-                <td className="px-3 py-2.5 text-xs text-[var(--text-muted)]">{t.certs.length}</td>
-                <td className="px-3 py-2.5">
-                  <span
-                    className={cn(
-                      "rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase",
-                      t.active
-                        ? "bg-[var(--surface-3)] text-[var(--good)]"
-                        : "bg-[var(--surface-3)] text-[var(--text-faint)]",
-                    )}
-                  >
-                    {t.active ? "Active" : "Inactive"}
-                  </span>
-                </td>
-                <td className="px-3 py-2.5">
-                  <Completeness pct={t.completeness_pct} missing={t.missing_fields} />
-                </td>
-                <td className="px-3 py-2.5 text-right">
-                  <Button size="sm" variant="ghost" onClick={() => setEditing(t)}>
-                    Edit
-                  </Button>
-                </td>
-              </tr>
+      {open && (
+        <div className="border-t border-[var(--border)] px-4 py-4">
+          <dl className="space-y-3">
+            <BioRow label="ASE Certifications">
+              <span className="font-semibold text-[var(--text)]">{b.ase_current.join(", ")}</span>
+              {b.ase_added.map((a) => (
+                <span key={a.code} className="ml-2 inline-flex items-center gap-2">
+                  <span className="text-[var(--text-faint)]">+</span>
+                  <span className="rounded bg-emerald-50 px-2 py-0.5 text-sm font-semibold text-emerald-700">{a.code} — {a.label}</span>
+                  {a.attachment && <Attachment name={a.attachment} />}
+                </span>
+              ))}
+            </BioRow>
+            {b.honda_training && (
+              <BioRow label="Honda Training">
+                <span className="rounded bg-emerald-50 px-2 py-0.5 text-sm font-semibold text-emerald-700">{b.honda_training.label}</span>
+                {b.honda_training.attachment && <span className="ml-2 inline-block align-middle"><Attachment name={b.honda_training.attachment} /></span>}
+              </BioRow>
+            )}
+            {b.self_ratings.map((r) => (
+              <BioRow key={r.label} label={`Self-Rated: ${r.label}`}>
+                <span className="inline-flex items-center gap-2">
+                  <Stars n={r.from} muted />
+                  <span className="text-[var(--text-faint)]">→</span>
+                  <Stars n={r.to} />
+                </span>
+              </BioRow>
             ))}
-          </tbody>
-        </table>
-      </Card>
+            {b.career_goal && (
+              <BioRow label="Career Goal">
+                <span className="rounded bg-emerald-50 px-2 py-1 text-sm font-medium italic text-emerald-800">&quot;{b.career_goal}&quot;</span>
+              </BioRow>
+            )}
+            {b.impact && (
+              <BioRow label="Impact on scoring">
+                <span className="text-sm text-[var(--text-muted)]" dangerouslySetInnerHTML={{ __html: b.impact.replace(/Bio Baseline|HV jobs|Job-fit/g, (m) => `<b class='text-[var(--text)]'>${m}</b>`) }} />
+              </BioRow>
+            )}
+          </dl>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Button variant="good" onClick={() => onAct("approve")} disabled={busy}>✓ Approve All</Button>
+            <button onClick={() => onAct("request-changes")} disabled={busy} className="rounded-lg border border-amber-400 px-4 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-50 disabled:opacity-50">Request Changes</button>
+            <button onClick={() => onAct("reject")} disabled={busy} className="rounded-lg border border-[var(--danger)] px-4 py-2 text-sm font-semibold text-[var(--danger)] transition hover:bg-red-50 disabled:opacity-50">Reject</button>
+            <button onClick={onToggle} className="text-sm font-semibold text-[var(--brand)] hover:underline">View full bio →</button>
+            {b.cert_proof && (
+              <span className="ml-auto text-xs text-[var(--text-faint)]">Approved changes apply to scoring tonight. Cert proof attached for {b.cert_proof} items.</span>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// One label/value pair inside a mobile card.
-function Pair({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
+function BioRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex justify-between gap-2">
-      <dt className="text-[var(--text-faint)]">{k}</dt>
-      <dd className={cn("text-[var(--text)]", mono && "font-mono")}>{v}</dd>
+    <div className="grid gap-1 sm:grid-cols-[180px_1fr] sm:items-baseline sm:gap-3">
+      <dt className="text-sm font-medium text-[var(--text-muted)]">{label}</dt>
+      <dd className="text-sm text-[var(--text)]">{children}</dd>
     </div>
   );
 }
 
-function Completeness({ pct, missing }: { pct: number; missing: string[] }) {
-  const color = pct === 100 ? "var(--good)" : pct >= 60 ? "var(--warn)" : "var(--danger)";
+function Attachment({ name }: { name: string }) {
   return (
-    <div className="flex items-center gap-2" title={missing.length ? `Missing: ${missing.join(", ")}` : "Complete"}>
-      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-[var(--surface-3)]">
-        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
-      </div>
-      <span className="font-mono text-xs" style={{ color }}>
-        {pct}%
-      </span>
-    </div>
+    <span className="inline-flex items-center gap-1 rounded border border-[var(--border-strong)] bg-[var(--surface-2)] px-2 py-0.5 align-middle text-xs text-[var(--brand)]">
+      <span aria-hidden>📎</span>{name}
+    </span>
   );
+}
+
+function Stars({ n, muted }: { n: number; muted?: boolean }) {
+  return (
+    <span className={cn("tracking-tight", muted ? "text-[var(--text-faint)]" : "text-amber-500")}>
+      {"★".repeat(n)}<span className="text-[var(--border-strong)]">{"★".repeat(Math.max(0, 5 - n))}</span>
+    </span>
+  );
+}
+
+function CertBadge({ label }: { label: string }) {
+  const hv = label === "HV";
+  const adas = label === "ADAS";
+  return (
+    <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-semibold",
+      hv ? "bg-emerald-50 text-emerald-700" : adas ? "bg-violet-50 text-violet-700" : "bg-[var(--surface-3)] text-[var(--text-muted)]")}>
+      {label}
+    </span>
+  );
+}
+
+function initials(name: string): string {
+  return name.split(" ").slice(0, 2).map((p) => p[0]).join("").toUpperCase();
+}
+function hue(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+  return `hsl(${h} 55% 45%)`;
 }

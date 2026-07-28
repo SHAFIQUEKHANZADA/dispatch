@@ -1,191 +1,224 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { AvailableTech } from "@/lib/types";
-import { Avatar, Card, Spinner, cn } from "@/components/ui";
-import { fmtClock, fmtShiftRange, fmtTimeShort, pct } from "@/lib/format";
+import { Button, Spinner, cn } from "@/components/ui";
+
+interface Reason { factor: string; text: string; points: number }
+interface RecRO {
+  ro_id: string;
+  ro_number: string;
+  vehicle: string;
+  concern: string | null;
+  concern_short: string | null;
+  priority_rank: number | null;
+  score: number;
+  reasons: Reason[];
+  warnings: string[];
+  technician_id: string;
+}
+interface TechRec {
+  id: string;
+  name: string;
+  initials: string;
+  level: string;
+  status: { kind: string; text: string };
+  cert_badge: string | null;
+  insight: string | null;
+  ros: RecRO[];
+}
+interface Data {
+  counters: { available_freeing: number; unassigned_ros: number };
+  techs: TechRec[];
+}
+
+const STATUS_STYLE: Record<string, string> = {
+  available: "bg-emerald-500 text-white",
+  freeing: "bg-amber-400 text-[#3a2c0a]",
+  idle: "bg-[var(--danger)] text-white",
+};
+const BAR_COLOR = ["#16a34a", "#2563eb", "#f59e0b"];
 
 export default function AvailableTechsPage() {
-  const [techs, setTechs] = useState<AvailableTech[]>([]);
+  const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [assigning, setAssigning] = useState<string | null>(null);
 
-  useEffect(() => {
-    api
-      .get<{ technicians: AvailableTech[] }>("/technicians/available")
-      .then((d) => setTechs(d.technicians))
-      .catch((e) => setError(e instanceof ApiError ? e.message : String(e)))
-      .finally(() => setLoading(false));
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await api.get<Data>("/technicians/recommendations"));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  if (loading) return <Spinner label="Loading technicians…" />;
-  if (error)
-    return (
-      <div className="rounded-lg border border-[var(--danger)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--danger)]">
-        {error}
-      </div>
-    );
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const onShift = techs.filter((t) => t.on_shift);
-  const off = techs.filter((t) => !t.on_shift);
+  async function assign(ro_id: string, technician_id: string) {
+    setAssigning(ro_id + technician_id);
+    try {
+      await api.post("/dispatch/assign", { ro_id, technician_id });
+      await load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      setAssigning(null);
+    }
+  }
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">Available Technicians</h1>
-        <p className="text-sm text-[var(--text-muted)]">
-          Who&apos;s on shift, what they&apos;re holding, who&apos;s idle. Idle techs are highlighted.
-        </p>
+    <div className="px-5 py-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">Available Techs</h1>
+          <p className="text-sm text-[var(--text-muted)]">
+            Tech is free — ROs are ranked by Match for that tech, not just by priority. Hover an RO to see why.
+          </p>
+        </div>
+        {data && (
+          <div className="flex items-center gap-5 text-sm">
+            <span className="text-[var(--text-muted)]">
+              Available / Freeing: <b className="text-[var(--good)]">{data.counters.available_freeing}</b>
+            </span>
+            <span className="text-[var(--text-muted)]">
+              Unassigned ROs: <b className="text-[var(--warn)]">{data.counters.unassigned_ros}</b>
+            </span>
+          </div>
+        )}
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {onShift.map((t) => (
-          <TechCard key={t.id} t={t} />
+      {loading && <div className="pt-8"><Spinner label="Loading technicians…" /></div>}
+      {error && (
+        <div className="mt-4 rounded-lg border border-[var(--danger)] bg-red-50 px-4 py-3 text-sm text-[var(--danger)]">
+          {error}
+        </div>
+      )}
+
+      <div className="mt-5 space-y-4">
+        {data?.techs.map((t) => (
+          <div key={t.id} className="card-elev overflow-visible rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+            {/* tech header */}
+            <div className="flex items-center gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-semibold text-white" style={{ background: hue(t.name) }}>
+                {t.initials}
+              </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-base font-bold text-[var(--text)]">{t.name}</span>
+                  <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide", STATUS_STYLE[t.status.kind] ?? "bg-[var(--surface-3)]")}>
+                    {t.status.text}
+                  </span>
+                </div>
+                <div className="text-xs text-[var(--text-muted)]">{t.level}</div>
+              </div>
+              {t.cert_badge && (
+                <span className="ml-auto rounded-full bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-bold uppercase text-[var(--text-muted)]">
+                  {t.cert_badge}
+                </span>
+              )}
+            </div>
+
+            {/* insight banner */}
+            {t.insight && (
+              <div className="mt-3 flex items-start gap-2 rounded-lg bg-[var(--brand)]/8 px-3 py-2 text-sm text-[var(--text-muted)]">
+                <span aria-hidden>💡</span>
+                <span>{t.insight}</span>
+              </div>
+            )}
+
+            {/* recommended ROs */}
+            <div className="mt-3">
+              <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-faint)]">
+                Recommended ROs for {t.name.split(" ")[0]} {t.name.split(" ")[1]?.[0] ?? ""}.
+              </div>
+              {t.ros.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-[var(--border-strong)] px-3 py-3 text-center text-sm text-[var(--text-muted)]">
+                  No eligible ROs for this tech right now.
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {t.ros.map((ro, i) => (
+                    <RecRow
+                      key={ro.ro_id}
+                      ro={ro}
+                      rank={i + 1}
+                      busy={assigning === ro.ro_id + t.id}
+                      onAssign={() => assign(ro.ro_id, t.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         ))}
       </div>
-
-      {off.length > 0 && (
-        <div>
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-faint)]">
-            Off shift
-          </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {off.map((t) => (
-              <TechCard key={t.id} t={t} />
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-function TechCard({ t }: { t: AvailableTech }) {
-  const loadPct = t.capacity_hours > 0 ? (t.assigned_hours / t.capacity_hours) * 100 : 0;
-  const freeHours = Math.max(0, t.capacity_hours - t.assigned_hours);
-  const barColor = t.overloaded
-    ? "var(--danger)"
-    : loadPct > 85
-      ? "var(--warn)"
-      : "var(--good)";
-
-  // What a dispatcher wants to know at a glance: can I give this person work
-  // right now, and if not, when? Never render a raw/instant-less time here —
-  // shift_start/end are wall-clock strings, not timestamps.
-  const availability = !t.on_shift
-    ? t.shift_start
-      ? `Off shift · returns ${fmtClock(t.shift_start)}`
-      : "Off shift"
-    : t.idle
-      ? "Now"
-      : t.free_at
-        ? fmtTimeShort(t.free_at)
-        : "—";
-
+function RecRow({ ro, rank, busy, onAssign }: { ro: RecRO; rank: number; busy: boolean; onAssign: () => void }) {
+  const color = BAR_COLOR[Math.min(rank - 1, 2)];
   return (
-    <Card
-      className={cn(
-        "p-4",
-        t.idle && "ring-1 ring-[var(--warn)]/50",
-        !t.on_shift && "opacity-60",
+    <div className={cn("group relative flex items-center gap-3 rounded-lg border px-3 py-2", rank === 1 ? "border-[var(--good)]/40 bg-emerald-50/40" : "border-transparent hover:bg-[var(--surface-2)]")}>
+      <span className="w-3 text-center font-mono text-xs text-[var(--text-faint)]">{rank}</span>
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--surface-3)] text-[var(--text-muted)]">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M14.7 6.3a4 4 0 1 1 5 5L18 13l-6 6-4-4 6-6z"/><path d="M6 18l-2 2"/></svg>
+      </span>
+      <div className="w-48 min-w-0">
+        <div className="truncate text-sm font-bold text-[var(--brand)]">RO #{ro.ro_number}</div>
+        <div className="truncate text-[11px] text-[var(--text-muted)]">
+          {ro.vehicle} · {ro.concern_short}
+        </div>
+      </div>
+      {ro.priority_rank != null && (
+        <span className="shrink-0 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700">
+          Priority #{ro.priority_rank}
+        </span>
       )}
-    >
-      <div className="flex items-start gap-3">
-        <Avatar name={t.name} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="truncate font-medium">{t.name}</span>
-            {t.idle && (
-              <span className="rounded bg-[var(--warn)] px-1.5 py-0.5 text-[9px] font-bold uppercase text-[#1a1204]">
-                Idle
-              </span>
-            )}
-            {t.overloaded && (
-              <span className="rounded bg-[var(--danger)] px-1.5 py-0.5 text-[9px] font-bold uppercase text-white">
-                Overloaded
-              </span>
-            )}
+      <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-[var(--surface-3)]">
+        <div className="h-full rounded-full" style={{ width: `${ro.score}%`, background: color }} />
+      </div>
+      <span className="w-8 text-right font-mono text-lg font-bold tabular-nums" style={{ color }}>
+        {ro.score}
+      </span>
+      <Button size="sm" variant="primary" disabled={busy} onClick={onAssign}>
+        {busy ? "…" : "Assign"}
+      </Button>
+
+      {/* hover WHY tooltip */}
+      <div className="pointer-events-none absolute right-full top-1/2 z-40 mr-3 hidden w-[340px] -translate-y-1/2 group-hover:block">
+        <div className="relative rounded-2xl bg-[#111c2e] p-4 shadow-2xl ring-1 ring-white/10">
+          <div className="flex items-center gap-4">
+            <div className="shrink-0 border-r border-white/10 pr-4 text-center">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-[#60a5fa]">Why?</div>
+              <div className="my-0.5 font-mono text-3xl font-extrabold leading-none text-[#4ade80]">{ro.score}</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-white/40">Match</div>
+            </div>
+            <ul className="min-w-0 flex-1 space-y-1.5 text-[12px] leading-snug">
+              {ro.reasons.slice(0, 6).map((r, k) => (
+                <li key={k} className="flex gap-2"><span className="mt-px text-emerald-400">✓</span><span className="text-white/90">{r.text}</span></li>
+              ))}
+              {ro.warnings.map((w, k) => (
+                <li key={`w${k}`} className="flex gap-2"><span className="mt-px font-bold text-amber-400">!</span><span className="text-amber-200">{w}</span></li>
+              ))}
+            </ul>
           </div>
-          <div className="text-xs text-[var(--text-muted)]">
-            {t.level_label} · {t.team}
-          </div>
+          <span className="absolute left-full top-1/2 -translate-y-1/2 border-[9px] border-transparent border-l-[#111c2e]" />
         </div>
       </div>
-
-      {/* Free capacity is what a dispatcher actually shops for — lead with it. */}
-      <div className="mt-3">
-        <div className="flex items-baseline justify-between">
-          <span className="text-xs text-[var(--text-muted)]">Free capacity</span>
-          <span
-            className={cn(
-              "font-mono text-lg font-bold",
-              freeHours <= 0 ? "text-[var(--danger)]" : "text-[var(--good)]",
-            )}
-          >
-            {freeHours > 0 ? `${freeHours.toFixed(1)} hrs` : "Full"}
-          </span>
-        </div>
-        <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-[var(--surface-3)]">
-          <div
-            className="h-full rounded-full transition-all"
-            style={{ width: `${Math.min(100, loadPct)}%`, background: barColor }}
-          />
-        </div>
-        <div className="mt-1 flex justify-between text-[11px] text-[var(--text-faint)]">
-          <span>Assigned {t.assigned_hours} hrs</span>
-          <span>Capacity {t.capacity_hours} hrs</span>
-        </div>
-      </div>
-
-      <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-        <Row k="Shift" v={fmtShiftRange(t.shift_start, t.shift_end)} />
-        <Row k={t.on_shift ? "Available" : "Status"} v={availability} />
-        <Row
-          k="Efficiency (T90)"
-          v={t.efficiency_t90 !== null ? pct(t.efficiency_t90, 0) : "—"}
-        />
-        <Row k="Target" v={t.efficiency_target ? pct(t.efficiency_target, 0) : "—"} />
-      </div>
-
-      <div className="mt-2">
-        <div className="text-xs text-[var(--text-muted)]">
-          Current RO:{" "}
-          {t.current_ro ? (
-            <span className="font-mono text-[var(--text)]">
-              #{t.current_ro.ro_number} ({t.current_ro.concern_category})
-            </span>
-          ) : (
-            <span className="text-[var(--text-faint)]">none</span>
-          )}
-        </div>
-      </div>
-
-      {t.certs.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {t.certs.map((c) => (
-            <span
-              key={c}
-              className="rounded bg-[var(--surface-3)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]"
-            >
-              {c.replace(/_/g, "/")}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {t.data_issues.length > 0 && (
-        <div className="mt-2 text-[11px] text-[var(--warn)]">⚠ {t.data_issues[0]}</div>
-      )}
-    </Card>
+    </div>
   );
 }
 
-function Row({ k, v }: { k: string; v: string }) {
-  return (
-    <div className="flex justify-between">
-      <span className="text-[var(--text-faint)]">{k}</span>
-      <span className="text-[var(--text)]">{v}</span>
-    </div>
-  );
+function hue(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+  return `hsl(${h} 45% 45%)`;
 }

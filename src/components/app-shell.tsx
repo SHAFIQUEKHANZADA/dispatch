@@ -6,16 +6,21 @@ import { useEffect } from "react";
 import { AuthProvider, useAuth } from "./auth-context";
 import { cn } from "./ui";
 
+// Left-sidebar navigation — matches the dispatcher board layout exactly.
 const NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: "▦" },
-  { href: "/dispatch", label: "Dispatch Board", icon: "⚡", primary: true },
-  { href: "/techs", label: "Available Techs", icon: "◉" },
-  { href: "/scoreboard", label: "Scoreboard", icon: "▤" },
-  { href: "/settings", label: "Technicians", icon: "⚙" },
-  { href: "/import", label: "Data Sources", icon: "⇪" },
+  { href: "/dashboard", label: "Dashboard", icon: <IconGrid /> },
+  { href: "/scoreboard", label: "Scoreboard", icon: <IconTrophy /> },
+  { href: "/dispatch", label: "Available ROs", icon: <IconClipboard /> },
+  { href: "/techs", label: "Available Techs", icon: <IconUsers /> },
+  { href: "/route-sheet", label: "Route Sheet", icon: <IconRoute /> },
+  { href: "/reports", label: "Reports", icon: <IconChart /> },
+  { href: "/store-settings", label: "Store Settings", icon: <IconStore /> },
+  { href: "/scoreboard-settings", label: "Scoreboard Settings", icon: <IconSliders /> },
+  { href: "/settings", label: "Tech Settings", icon: <IconGear /> },
 ];
 
-function StoreMenu() {
+function Sidebar() {
+  const pathname = usePathname();
   const { dealer, configured, signOut } = useAuth();
   const router = useRouter();
 
@@ -25,125 +30,111 @@ function StoreMenu() {
   }
 
   return (
-    <div className="flex items-center gap-3">
-      {dealer && (
-        <div className="hidden text-right sm:block">
-          <div className="text-sm font-medium leading-tight">{dealer.name}</div>
-          <div className="text-[10px] uppercase tracking-wide text-[var(--text-faint)]">
-            {dealer.role?.replace("_", " ")}
+    <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col bg-[#0b1b3f] text-white md:flex print:hidden!">
+      {/* logo — white band; height matches the page header bar so the top aligns */}
+      <div className="flex h-[57px] shrink-0 items-center border-b border-[var(--border)] bg-white px-4">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/image.png" alt="3D Dispatch — Data Driven Decisions" className="h-8 w-auto" />
+      </div>
+
+      {/* nav */}
+      <nav className="flex-1 space-y-0.5 px-2.5 py-3">
+        {NAV.map((item) => {
+          const active = pathname.startsWith(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition",
+                active
+                  ? "bg-[#2563eb] text-white shadow-sm"
+                  : "text-white/70 hover:bg-white/10 hover:text-white",
+              )}
+            >
+              <span className={active ? "text-white" : "text-white/55"}>{item.icon}</span>
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* store + user */}
+      <div className="border-t border-white/10 p-3">
+        {dealer && (
+          <div className="mb-2 rounded-lg bg-white/10 px-3 py-2 text-center text-sm font-semibold">
+            {dealer.name}
           </div>
+        )}
+        <div className="flex items-center gap-2.5 px-1">
+          <span className="grid h-8 w-8 place-items-center rounded-full bg-[#3b82f6] text-xs font-semibold text-white">
+            {initials(dealer?.name)}
+          </span>
+          <div className="min-w-0 flex-1 leading-tight">
+            <div className="truncate text-sm font-medium">
+              {dealer ? dealer.name.split(" ")[0] : "User"}
+            </div>
+            <div className="text-[11px] capitalize text-white/45">
+              {dealer?.role?.replace("_", " ").toLowerCase() ?? "dispatcher"}
+            </div>
+          </div>
+          {configured && (
+            <button
+              onClick={handleSignOut}
+              title="Sign out"
+              className="rounded-md p-1.5 text-white/50 transition hover:bg-white/10 hover:text-white"
+            >
+              <IconLogout />
+            </button>
+          )}
         </div>
-      )}
-      {configured && (
-        <button
-          onClick={handleSignOut}
-          className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface-2)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] transition hover:text-[var(--text)]"
-        >
-          Sign out
-        </button>
-      )}
-    </div>
+      </div>
+    </aside>
   );
 }
 
-function Nav() {
-  const pathname = usePathname();
-  return (
-    <nav className="flex items-center gap-1">
-      {NAV.map((item) => {
-        const active = pathname.startsWith(item.href);
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={cn(
-              "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition",
-              active
-                ? "bg-[var(--surface-2)] text-[var(--text)]"
-                : "text-[var(--text-muted)] hover:bg-[var(--surface)] hover:text-[var(--text)]",
-            )}
-          >
-            <span className="text-xs opacity-70" aria-hidden>
-              {item.icon}
-            </span>
-            <span className="hidden md:inline">{item.label}</span>
-          </Link>
-        );
-      })}
-    </nav>
-  );
+function initials(name?: string): string {
+  if (!name) return "U";
+  return name.split(" ").slice(0, 2).map((p) => p[0]).join("").toUpperCase();
 }
 
-// Redirects to /login when Supabase auth is on and there is no session.
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { ready, session, configured } = useAuth();
   const router = useRouter();
-
   useEffect(() => {
     if (ready && configured && !session) router.replace("/login");
   }, [ready, configured, session, router]);
 
-  if (!ready) {
-    return (
-      <div className="grid min-h-screen place-items-center text-sm text-[var(--text-muted)]">
-        Loading…
-      </div>
-    );
-  }
-  if (configured && !session) {
-    return (
-      <div className="grid min-h-screen place-items-center text-sm text-[var(--text-muted)]">
-        Redirecting to sign in…
-      </div>
-    );
-  }
+  if (!ready)
+    return <div className="grid min-h-screen place-items-center text-sm text-[var(--text-muted)]">Loading…</div>;
+  if (configured && !session)
+    return <div className="grid min-h-screen place-items-center text-sm text-[var(--text-muted)]">Redirecting to sign in…</div>;
   return <>{children}</>;
-}
-
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--bg)]/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-4 px-4 py-2.5">
-          <div className="flex items-center gap-4">
-            <Link href="/dashboard" className="flex items-center gap-2.5">
-              <span className="grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-[#2563eb] to-[#1e40af] text-white shadow-sm">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                  <path d="M5 20V11M12 20V4M19 20v-6" />
-                </svg>
-              </span>
-              <span className="leading-tight">
-                <span className="block text-sm font-bold tracking-tight text-[var(--text)]">
-                  3D DISPATCH
-                </span>
-                <span className="block text-[9px] font-medium uppercase tracking-[0.14em] text-[var(--text-faint)]">
-                  Data Driven Decisions
-                </span>
-              </span>
-            </Link>
-          </div>
-          <div className="hidden lg:block">
-            <Nav />
-          </div>
-          <StoreMenu />
-        </div>
-        <div className="border-t border-[var(--border)] px-4 py-1.5 lg:hidden">
-          <Nav />
-        </div>
-      </header>
-      <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-5">
-        {children}
-      </main>
-    </div>
-  );
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
       <AuthGate>
-        <Shell>{children}</Shell>
+        <div className="flex min-h-screen bg-[var(--bg)]">
+          <Sidebar />
+          <main className="min-w-0 flex-1">{children}</main>
+        </div>
       </AuthGate>
     </AuthProvider>
   );
 }
+
+/* ---- icons ---- */
+const ip = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+function IconGrid() { return <svg {...ip}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>; }
+function IconTrophy() { return <svg {...ip}><path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0zM7 4H5a2 2 0 0 0 0 4h1M17 4h2a2 2 0 0 1 0 4h-1"/></svg>; }
+function IconClipboard() { return <svg {...ip}><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg>; }
+function IconUsers() { return <svg {...ip}><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 2.7-5 6-5s6 2 6 5M16 15c2.2 0 4 1.5 4 4"/><circle cx="17" cy="8" r="2.5"/></svg>; }
+function IconPlug() { return <svg {...ip}><path d="M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0zM12 17v5"/></svg>; }
+function IconGear() { return <svg {...ip}><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.5-2.4 1a7 7 0 0 0-1.7-1L14.5 3h-4l-.3 2.5a7 7 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.5 2.4-1a7 7 0 0 0 1.7 1l.3 2.5h4l.3-2.5a7 7 0 0 0 1.7-1l2.4 1 2-3.5-2-1.5c.1-.3.1-.7.1-1z"/></svg>; }
+function IconRoute() { return <svg {...ip}><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h6a3 3 0 0 0 3-3V9M6 17V8a3 3 0 0 1 3-3h5"/></svg>; }
+function IconChart() { return <svg {...ip}><path d="M3 3v18h18"/><path d="M7 15l3-4 3 2 4-6"/></svg>; }
+function IconStore() { return <svg {...ip}><path d="M3 9l1.5-5h15L21 9M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M3 9h18"/></svg>; }
+function IconSliders() { return <svg {...ip}><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>; }
+function IconLogout() { return <svg {...ip}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>; }

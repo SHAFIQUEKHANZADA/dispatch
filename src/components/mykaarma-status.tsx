@@ -8,6 +8,8 @@ interface MKStatus {
   configured: boolean;
   reachable?: boolean;
   ro_scope_granted?: boolean;
+  ro_search_scope_granted?: boolean;
+  open_ro_count?: number;
   opcode_total?: number;
   dealer_uuid?: string;
   message?: string;
@@ -125,6 +127,11 @@ export function MyKaarmaStatus() {
             {status.opcode_total !== undefined && (
               <span>Op codes available: {status.opcode_total}</span>
             )}
+            {status.open_ro_count !== undefined && (
+              <span className={status.open_ro_count > 0 ? "font-semibold text-good" : ""}>
+                Open ROs in myKaarma: {status.open_ro_count}
+              </span>
+            )}
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
@@ -142,7 +149,11 @@ export function MyKaarmaStatus() {
               disabled={!status.ro_scope_granted || busy !== null}
               onClick={() => runSync("/mykaarma/sync/repair-orders", "ros")}
             >
-              {busy === "ros" ? "Syncing…" : "Sync repair orders"}
+              {busy === "ros"
+                ? "Pulling…"
+                : status.open_ro_count
+                  ? `Pull ${status.open_ro_count} open RO${status.open_ro_count === 1 ? "" : "s"}`
+                  : "Pull open ROs"}
             </Button>
           </div>
 

@@ -1,420 +1,333 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { MetricValue, Scoreboard, Scorecard } from "@/lib/types";
-import { Card, GuardianBanner, Modal, Spinner, cn } from "@/components/ui";
-import { fmtDate } from "@/lib/format";
+import { Spinner, cn } from "@/components/ui";
 
-const PERIODS = ["DAILY", "MTD", "T90"];
-const METRIC_ORDER = [
-  "efficiency",
-  "productivity",
-  "utilization",
-  "promise_pct",
-  "comeback_rate",
-  "first_time_fix",
-];
+interface Column {
+  key: string;
+  header: string;
+  kind: "percent" | "number" | "hours" | "money";
+  higher: boolean;
+  goal: number | null;
+}
+interface Row {
+  rank: number;
+  technician_id?: string;
+  advisor_id?: string;
+  name: string;
+  team?: string | null;
+  level?: string | null;
+  qualifies: boolean;
+  data_issues?: string[];
+  values: Record<string, number | null> & {
+    sales_breakdown?: { yest: number | null; lmo: number | null; pmo: number | null };
+  };
+}
+interface Board {
+  view: string;
+  available: boolean;
+  message?: string;
+  period_label?: string;
+  rank_key?: string;
+  columns: Column[];
+  rows: Row[];
+  goals?: Record<string, number | null>;
+  store?: Record<string, number | null>;
+  facility_utilization?: number;
+}
 
-interface Drill {
-  technician_id: string;
-  period: string;
-  metric: string;
-  formula: string | null;
-  rows: {
-    ro_number: string;
-    closed_at: string | null;
-    op_code: string | null;
-    concern_category: string | null;
-    flagged_hours: number;
-    actual_clocked_hours: number;
-    labor_type: string | null;
-    made_promise: boolean | null;
-    counted: boolean;
-    exclusion_reason: string | null;
-  }[];
-  counted_rows: number;
-  excluded_rows: number;
+function fmtVal(v: number | null | undefined, kind: string): string {
+  if (v === null || v === undefined) return "—";
+  if (kind === "percent") return `${v}%`;
+  if (kind === "money") return `$${v}`;
+  return `${v}`;
+}
+
+// green if meeting goal, red if below — the leaderboard's whole language
+function cellTone(v: number | null, col: Column): "good" | "bad" | "neutral" {
+  if (v === null || col.goal === null) return "neutral";
+  const meets = col.higher ? v >= col.goal : v <= col.goal;
+  return meets ? "good" : "bad";
 }
 
 export default function ScoreboardPage() {
-  const [period, setPeriod] = useState("MTD");
-  const [data, setData] = useState<Scoreboard | null>(null);
+  const [view, setView] = useState<"technicians" | "advisors">("technicians");
+  const [data, setData] = useState<Board | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [drill, setDrill] = useState<Drill | null>(null);
+  const [paused, setPaused] = useState(false);
+  const [progress, setProgress] = useState(0);
 
+  // Auto-rotate: the bar fills over ROTATE_SECONDS, then flips the board and
+  // starts over — Technician -> Advisor -> Technician -> ... forever.
+  const ROTATE_SECONDS = 12;
   useEffect(() => {
-    setLoading(true);
-    api
-      .get<Scoreboard>(`/scoreboard?period=${period}`)
-      .then(setData)
-      .catch((e) => setError(e instanceof ApiError ? e.message : String(e)))
-      .finally(() => setLoading(false));
-  }, [period]);
+    if (paused) return;
+    const step = 100 / (ROTATE_SECONDS * 20); // tick every 50ms
+    const id = window.setInterval(() => {
+      setProgress((p) => {
+        if (p >= 100) {
+          // defer the board switch out of the state updater
+          window.setTimeout(
+            () => setView((v) => (v === "technicians" ? "advisors" : "technicians")),
+            0,
+          );
+          return 0;
+        }
+        return p + step;
+      });
+    }, 50);
+    return () => window.clearInterval(id);
+  }, [paused]);
 
-  async function openDrill(techId: string, metric: string) {
-    try {
-      const d = await api.get<Drill>(
-        `/scoreboard/${techId}/drilldown?period=${period}&metric=${metric}`,
-      );
-      setDrill(d);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
-    }
+  // reset the bar whenever the board changes (auto-rotate or a manual tap)
+  useEffect(() => {
+    setProgress(0);
+  }, [view]);
+
+  function toggleView() {
+    setView((v) => (v === "technicians" ? "advisors" : "technicians"));
   }
 
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await api.get<Board>(`/scoreboard/board?view=${view}`));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [view]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Technician Scoreboard</h1>
-          <p className="text-sm text-[var(--text-muted)]">
-            Six metrics, every one with a published formula. Click any number to see the source ROs.
-          </p>
+    <div className="flex h-screen flex-col">
+      {/* header */}
+      <header className="flex min-h-[57px] items-center justify-between border-b border-[var(--border)] bg-[var(--surface)] px-5 py-2">
+        <h1 className="text-lg font-semibold text-[var(--text)]">Service Scoreboard</h1>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setPaused((p) => !p)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-strong)] px-3 py-1.5 text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text)]"
+          >
+            {paused ? "▶ Resume" : "❚❚ Pause"}
+          </button>
+          {/* ADVISORS / TECHNICIANS toggle badge */}
+          <button
+            onClick={toggleView}
+            className="inline-flex items-center gap-1.5 rounded-full bg-[#0b1b3f] px-3.5 py-1.5 text-sm font-bold uppercase tracking-wide text-white"
+            title="Tap to switch board"
+          >
+            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-blink" />
+            {view === "technicians" ? "Technicians" : "Advisors"}
+          </button>
+          <div className="text-right text-xs leading-tight">
+            <div className="font-semibold text-[var(--text)]">
+              {data?.period_label ?? "Last 90 Days"}
+            </div>
+            <div className="text-[var(--text-faint)]">
+              {paused ? "Paused · tap badge to switch" : "Auto-rotates · tap badge to switch"}
+            </div>
+          </div>
         </div>
-        <div className="flex rounded-lg border border-[var(--border-strong)] bg-[var(--surface-2)] p-0.5">
-          {PERIODS.map((p) => (
-            <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              className={cn(
-                "rounded-md px-3 py-1 text-sm font-medium",
-                period === p
-                  ? "bg-[var(--brand)] text-white"
-                  : "text-[var(--text-muted)] hover:text-[var(--text)]",
-              )}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
+      </header>
+
+      {/* auto-rotate progress bar */}
+      <div className="h-1 w-full bg-[var(--surface-3)]">
+        <div
+          className="h-full bg-gradient-to-r from-[#0b1b3f] to-[#3b82f6]"
+          style={{ width: `${progress}%`, transition: paused ? "none" : "width 50ms linear" }}
+        />
       </div>
 
-      {data && (
-        <GuardianBanner
-          stale={data.source_data_age_hours === null || data.source_data_age_hours > 48}
-          ageHours={data.source_data_age_hours}
-          thresholdHours={48}
-        />
-      )}
-
-      {loading && <Spinner label="Computing metrics…" />}
-      {error && (
-        <div className="rounded-lg border border-[var(--danger)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--danger)]">
-          {error}
-        </div>
-      )}
-
-      {data && !loading && (
-        <>
-          <div className="text-xs text-[var(--text-faint)]">
-            Period {fmtDate(data.period_start)} – {fmtDate(data.period_end)} · Gate to rank:{" "}
-            ≥{data.gates.min_ros_to_rank} ROs or ≥{data.gates.min_flagged_hours_to_rank} flagged hrs
+      <div className="min-h-0 flex-1 overflow-auto bg-[var(--bg)] px-5 py-4">
+        {loading && <div className="pt-8"><Spinner label="Loading scoreboard…" /></div>}
+        {error && (
+          <div className="rounded-lg border border-[var(--danger)] bg-red-50 px-4 py-3 text-sm text-[var(--danger)]">
+            {error}
           </div>
+        )}
 
-          {/* --- mobile: one card per tech (a 8-column table is unusable on a phone) --- */}
-          <div className="space-y-3 lg:hidden">
-            {data.cards.map((c) => (
-              <ScoreCardMobile
-                key={c.technician_id}
-                card={c}
-                period={period}
-                windows={data.metric_windows}
-                labels={data.labels}
-                onDrill={openDrill}
-              />
-            ))}
+        {data && !loading && !data.available && (
+          <div className="mx-auto max-w-2xl rounded-xl border border-dashed border-[var(--border-strong)] bg-[var(--surface)] px-6 py-14 text-center">
+            <div className="text-base font-semibold text-[var(--text)]">No data yet</div>
+            <p className="mx-auto mt-2 max-w-md text-sm text-[var(--text-muted)]">{data.message}</p>
           </div>
+        )}
 
-          {/* --- desktop: table --- */}
-          <Card className="hidden overflow-x-auto lg:block">
-            <table className="w-full min-w-[900px] text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border)] text-left text-xs text-[var(--text-faint)]">
-                  <th className="px-3 py-2.5 font-medium">Technician</th>
-                  <th className="px-2 py-2.5 font-medium">Team / Level</th>
-                  {METRIC_ORDER.map((m) => (
-                    <th key={m} className="px-2 py-2.5 font-medium" title={data.formulas[m]}>
-                      {data.labels[m]}
-                      {!data.metric_windows[m].includes(period) && (
-                        <span className="ml-1 text-[9px] text-[var(--text-faint)]">(n/a {period})</span>
-                      )}
-                    </th>
-                  ))}
-                  <th className="px-2 py-2.5 font-medium">CP / War</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.cards.map((c) => (
-                  <ScoreRow
-                    key={c.technician_id}
-                    card={c}
-                    period={period}
-                    windows={data.metric_windows}
-                    lowerIsBetter={data.lower_is_better}
-                    onDrill={openDrill}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </Card>
-
-          {/* published formulas */}
-          <Card className="p-4">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-faint)]">
-              Published formulas — nothing here is a black box
-            </div>
-            <div className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
-              {METRIC_ORDER.map((m) => (
-                <div key={m} className="flex justify-between gap-2">
-                  <span className="text-[var(--text-muted)]">{data.labels[m]}</span>
-                  <span className="text-right font-mono text-[var(--text-faint)]">
-                    {data.formulas[m]}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </>
-      )}
-
-      <DrillModal drill={drill} onClose={() => setDrill(null)} />
+        {data && !loading && data.available && <Leaderboard data={data} />}
+      </div>
     </div>
   );
 }
 
-// Mobile view of one technician's scorecard. Same numbers, same gates, same
-// click-to-drilldown as the desktop table — just stacked so nothing runs off
-// the screen. A service manager checks this on a phone on the shop floor.
-function ScoreCardMobile({
-  card,
-  period,
-  windows,
-  labels,
-  onDrill,
-}: {
-  card: Scorecard;
-  period: string;
-  windows: Record<string, string[]>;
-  labels: Record<string, string>;
-  onDrill: (techId: string, metric: string) => void;
-}) {
-  const applicable = METRIC_ORDER.filter((m) => windows[m].includes(period));
+function Leaderboard({ data }: { data: Board }) {
+  const isAdvisor = data.view === "advisors";
   return (
-    <Card className={cn("p-4", !card.qualifies_for_ranking && "opacity-75")}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="font-semibold">{card.name}</div>
-          <div className="text-xs text-[var(--text-muted)]">
-            {card.skill_level ?? "—"} · {card.team ?? "—"}
-          </div>
-        </div>
-        {!card.qualifies_for_ranking && (
-          <span
-            className="shrink-0 rounded border border-[var(--warn)] px-1.5 py-0.5 text-[9px] font-bold uppercase text-[var(--warn)]"
-            title={card.data_issues.join(" · ")}
-          >
-            Building sample
+    <div>
+      <div className="mb-3 flex items-center gap-3">
+        <h2 className={cn("text-xl font-extrabold tracking-tight", isAdvisor ? "text-[var(--brand)]" : "text-[var(--good)]")}>
+          {isAdvisor ? "ADVISOR PERFORMANCE" : "TECHNICIAN PERFORMANCE"}
+        </h2>
+        <span className="text-xs text-[var(--text-faint)]">
+          Ranked by {isAdvisor ? "CSI" : "Efficiency"} · {data.period_label}
+        </span>
+        <span className="ml-auto text-xs text-[var(--text-faint)]">
+          {data.rows.length} {isAdvisor ? "advisors" : "technicians"}
+        </span>
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] card-elev">
+        <table className="w-full min-w-[900px] text-sm">
+          <thead>
+            <tr className="text-left text-[11px] uppercase tracking-wide text-[var(--text-faint)]">
+              <th className="px-4 py-3 font-medium">{isAdvisor ? "Advisor" : "Technician"}</th>
+              {data.columns.map((c) => (
+                <th key={c.key} className="px-3 py-3 text-center font-medium">{c.header}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.map((r) => (
+              <ScoreRow key={r.technician_id ?? r.advisor_id} row={r} columns={data.columns} />
+            ))}
+
+            {/* GOAL row */}
+            <tr className="border-t-2 border-[var(--border)]">
+              <td className="px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">Goal</td>
+              {data.columns.map((c) => (
+                <td key={c.key} className="px-3 py-2.5 text-center">
+                  {c.goal !== null && (
+                    <span className="inline-block rounded-md bg-[#0b1b3f] px-2.5 py-1 text-xs font-bold text-white">
+                      {fmtVal(c.goal, c.kind)}
+                    </span>
+                  )}
+                </td>
+              ))}
+            </tr>
+
+            {/* STORE AVG / TOTAL row */}
+            <tr className="bg-[var(--surface-2)]">
+              <td className="px-4 py-3 text-sm font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                Store Avg / Total
+              </td>
+              {data.columns.map((c) => {
+                const v = data.store?.[c.key] ?? null;
+                const tone = cellTone(v, c);
+                return (
+                  <td
+                    key={c.key}
+                    className={cn(
+                      "px-3 py-3 text-center font-mono text-base font-bold",
+                      tone === "good" ? "text-[var(--good)]" : tone === "bad" ? "text-[var(--danger)]" : "text-[var(--text)]",
+                    )}
+                  >
+                    {fmtVal(v, c.kind)}
+                  </td>
+                );
+              })}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* facility utilization (advisor board) */}
+      {isAdvisor && data.facility_utilization != null && (
+        <div className="mt-4 flex items-center gap-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-5 py-4 card-elev">
+          <span className="text-sm font-bold uppercase tracking-wide text-[var(--text-muted)]">
+            Facility Utilization
           </span>
-        )}
-      </div>
-
-      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
-        {applicable.map((m) => {
-          const mv = card.metrics[m];
-          return (
-            <div key={m} className="flex items-baseline justify-between gap-2">
-              <dt className="text-xs text-[var(--text-faint)]">{labels[m]}</dt>
-              <dd>
-                {!mv || !mv.available ? (
-                  <span
-                    className="cursor-help text-xs text-[var(--warn)]"
-                    title={mv?.issue ?? "unavailable"}
-                  >
-                    ⚠ n/a
-                  </span>
-                ) : (
-                  <button
-                    onClick={() => onDrill(card.technician_id, m)}
-                    className="font-mono text-sm font-semibold tabular-nums text-[var(--text)] underline decoration-dotted underline-offset-2"
-                    title={`${mv.numerator} ÷ ${mv.denominator} — tap for source ROs`}
-                  >
-                    {mv.value?.toFixed(1)}
-                    {mv.unit === "percent" ? "%" : ""}
-                  </button>
-                )}
-              </dd>
-            </div>
-          );
-        })}
-      </dl>
-
-      <div className="mt-3 flex justify-between border-t border-[var(--border)] pt-2 text-[11px] text-[var(--text-muted)]">
-        <span>
-          ROs <span className="font-mono text-[var(--text)]">{card.ro_count}</span>
-        </span>
-        <span>
-          CP / Warranty{" "}
-          <span className="font-mono text-[var(--text)]">
-            {card.cp_flagged_hours} / {card.warranty_flagged_hours}
-          </span>{" "}
-          hrs
-        </span>
-      </div>
-
-      {card.data_issues.length > 0 && (
-        <div className="mt-2 text-[11px] text-[var(--warn)]">⚠ {card.data_issues[0]}</div>
+          <div className="relative h-3 flex-1 overflow-hidden rounded-full bg-[var(--surface-3)]">
+            <div className="h-full rounded-full bg-[var(--good)]" style={{ width: `${data.facility_utilization}%` }} />
+          </div>
+          <span className="font-mono text-lg font-bold text-[var(--good)]">{data.facility_utilization}%</span>
+          <span className="max-w-[220px] text-[10px] text-[var(--text-faint)]">
+            Placeholder — confirm exact formula (sold/flagged hrs ÷ available capacity).
+          </span>
+        </div>
       )}
-    </Card>
+    </div>
   );
 }
 
-function ScoreRow({
-  card,
-  period,
-  windows,
-  lowerIsBetter,
-  onDrill,
-}: {
-  card: Scorecard;
-  period: string;
-  windows: Record<string, string[]>;
-  lowerIsBetter: string[];
-  onDrill: (techId: string, metric: string) => void;
-}) {
+function ScoreRow({ row, columns }: { row: Row; columns: Column[] }) {
+  const rankStyle =
+    row.rank === 1
+      ? "bg-amber-400 text-white"
+      : row.rank === 2
+        ? "bg-slate-300 text-slate-700"
+        : row.rank === 3
+          ? "bg-orange-400 text-white"
+          : "bg-[var(--surface-3)] text-[var(--text-muted)]";
   return (
     <tr
       className={cn(
-        "border-b border-[var(--border)]",
-        !card.qualifies_for_ranking && "opacity-60",
+        "border-t border-[var(--border)]",
+        row.rank === 1 && "ring-2 ring-inset ring-amber-300",
+        !row.qualifies && "opacity-60",
       )}
     >
-      <td className="px-3 py-2.5">
-        <div className="flex items-center gap-2">
-          <span className="font-medium">{card.name}</span>
-          {!card.qualifies_for_ranking && (
-            <span
-              className="rounded border border-[var(--warn)] px-1.5 py-0.5 text-[9px] font-bold uppercase text-[var(--warn)]"
-              title={card.data_issues.join(" · ")}
-            >
-              Building sample
-            </span>
-          )}
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-3">
+          <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-bold", rankStyle)}>
+            {row.rank}
+          </span>
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[11px] font-semibold text-white" style={{ background: hue(row.name) }}>
+            {initials(row.name)}
+          </span>
+          <div>
+            <div className="font-semibold text-[var(--text)]">{row.name}</div>
+            {!row.qualifies && (
+              <div className="text-[10px] font-medium uppercase text-[var(--warn)]" title={(row.data_issues ?? []).join(" · ")}>
+                Building sample
+              </div>
+            )}
+          </div>
         </div>
       </td>
-      <td className="px-2 py-2.5 text-xs text-[var(--text-muted)]">
-        {card.team} · {card.skill_level}
-      </td>
-      {METRIC_ORDER.map((m) => (
-        <td key={m} className="px-2 py-2.5">
-          <MetricCell
-            mv={card.metrics[m]}
-            applicable={windows[m].includes(period)}
-            onClick={() => onDrill(card.technician_id, m)}
-          />
-        </td>
-      ))}
-      <td className="px-2 py-2.5 text-xs text-[var(--text-muted)]">
-        <span className="font-mono">{card.cp_flagged_hours}</span>
-        {" / "}
-        <span className="font-mono">{card.warranty_flagged_hours}</span>
-      </td>
+      {columns.map((c) => {
+        const v = (row.values[c.key] as number | null) ?? null;
+        const tone = cellTone(v, c);
+        const sb = c.key === "sales_ro" ? row.values.sales_breakdown : undefined;
+        return (
+          <td key={c.key} className="px-3 py-3 text-center">
+            <span
+              className={cn(
+                "inline-block min-w-[52px] rounded-md px-2.5 py-1.5 text-sm font-semibold",
+                tone === "good"
+                  ? "bg-emerald-50 text-emerald-700"
+                  : tone === "bad"
+                    ? "bg-red-50 text-red-600"
+                    : "bg-[var(--surface-2)] text-[var(--text-muted)]",
+              )}
+            >
+              {fmtVal(v, c.kind)}
+            </span>
+            {sb && (
+              <div className="mt-1 flex justify-center gap-2 text-[9px] text-[var(--text-faint)]">
+                <span>YEST ${sb.yest}</span>
+                <span>L.MO ${sb.lmo}</span>
+                <span>P.MO ${sb.pmo}</span>
+              </div>
+            )}
+          </td>
+        );
+      })}
     </tr>
   );
 }
 
-function MetricCell({
-  mv,
-  applicable,
-  onClick,
-}: {
-  mv: MetricValue;
-  applicable: boolean;
-  onClick: () => void;
-}) {
-  if (!applicable) return <span className="text-[var(--text-faint)]">—</span>;
-  if (!mv || !mv.available) {
-    return (
-      <span
-        className="cursor-help text-xs text-[var(--warn)]"
-        title={mv?.issue ?? "unavailable"}
-      >
-        ⚠ n/a
-      </span>
-    );
-  }
-  return (
-    <button
-      onClick={onClick}
-      className="font-mono tabular-nums hover:underline"
-      title={`${mv.numerator} ÷ ${mv.denominator} — click for source ROs`}
-    >
-      {mv.value?.toFixed(1)}
-      {mv.unit === "percent" ? "%" : ""}
-    </button>
-  );
+function initials(name: string): string {
+  return name.split(" ").slice(0, 2).map((p) => p[0]).join("").toUpperCase();
 }
-
-function DrillModal({ drill, onClose }: { drill: Drill | null; onClose: () => void }) {
-  if (!drill) return null;
-  return (
-    <Modal
-      open={drill !== null}
-      onClose={onClose}
-      wide
-      title={`Source ROs — ${drill.metric}`}
-    >
-      <div className="space-y-3">
-        <div className="text-xs text-[var(--text-muted)]">
-          <span className="font-semibold">Formula:</span> {drill.formula}
-          <span className="ml-3">
-            {drill.counted_rows} counted · {drill.excluded_rows} excluded
-          </span>
-        </div>
-        <div className="max-h-[50vh] overflow-y-auto rounded-lg border border-[var(--border)]">
-          <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-[var(--surface-2)] text-left text-[var(--text-faint)]">
-              <tr>
-                <th className="px-2 py-1.5">RO</th>
-                <th className="px-2 py-1.5">Category</th>
-                <th className="px-2 py-1.5">Op</th>
-                <th className="px-2 py-1.5 text-right">Flagged</th>
-                <th className="px-2 py-1.5 text-right">Clocked</th>
-                <th className="px-2 py-1.5">Type</th>
-                <th className="px-2 py-1.5">Counted</th>
-              </tr>
-            </thead>
-            <tbody>
-              {drill.rows.map((r, i) => (
-                <tr
-                  key={i}
-                  className={cn(
-                    "border-t border-[var(--border)]",
-                    !r.counted && "opacity-50",
-                  )}
-                >
-                  <td className="px-2 py-1.5 font-mono text-[var(--brand)]">{r.ro_number}</td>
-                  <td className="px-2 py-1.5">{r.concern_category}</td>
-                  <td className="px-2 py-1.5 text-[var(--text-muted)]">{r.op_code}</td>
-                  <td className="px-2 py-1.5 text-right font-mono">{r.flagged_hours}</td>
-                  <td className="px-2 py-1.5 text-right font-mono">{r.actual_clocked_hours}</td>
-                  <td className="px-2 py-1.5">{r.labor_type}</td>
-                  <td className="px-2 py-1.5">
-                    {r.counted ? (
-                      <span className="text-[var(--good)]">✓</span>
-                    ) : (
-                      <span className="text-[var(--text-faint)]" title={r.exclusion_reason ?? ""}>
-                        excluded
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </Modal>
-  );
+function hue(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+  return `hsl(${h} 45% 45%)`;
 }

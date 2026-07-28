@@ -59,7 +59,15 @@ async function request<T>(
     let detail = res.statusText;
     try {
       const body = await res.json();
-      detail = body.detail ?? JSON.stringify(body);
+      const d = body.detail ?? body;
+      if (typeof d === "string") {
+        detail = d;
+      } else if (Array.isArray(d)) {
+        // FastAPI 422 validation errors -> array of {loc, msg, ...}
+        detail = d.map((e) => e?.msg ?? JSON.stringify(e)).join("; ");
+      } else {
+        detail = JSON.stringify(d);
+      }
     } catch {
       /* non-JSON error body */
     }
