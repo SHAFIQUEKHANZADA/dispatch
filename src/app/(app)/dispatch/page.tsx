@@ -8,6 +8,14 @@ import { ROCard } from "@/components/ro-card";
 import { DispatchModal } from "@/components/dispatch-modal";
 import { SmartDecisionModal } from "@/components/smart-decision-modal";
 
+interface ApptService {
+  op_code: string | null;
+  description: string | null;
+  duration_mins: number | null;
+  price: number | null;
+  pay_type: string | null;
+  operation_type: string | null;
+}
 interface Appt {
   appointment_uuid: string;
   customer_name: string;
@@ -27,6 +35,7 @@ interface Appt {
   status: string | null;
   transport: string | null;
   service_requested: string | null;
+  services: ApptService[];
   internal_notes: string | null;
   recall: boolean;
   source: string | null;
@@ -352,29 +361,54 @@ function apptHue(name: string): string {
   return `hsl(${h} 55% 45%)`;
 }
 
+function FactList({ title, rows, cols2 }: { title: string; rows: [string, ReactNode][]; cols2?: boolean }) {
+  if (rows.length === 0) return null;
+  return (
+    <div>
+      <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-[var(--text-faint)]">{title}</div>
+      <dl className={cols2 ? "grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2" : "space-y-1"}>
+        {rows.map(([k, v], i) => (
+          <div key={i} className="flex items-baseline justify-between gap-3 border-b border-dashed border-[var(--border)] py-0.5 last:border-0">
+            <dt className="shrink-0 text-xs text-[var(--text-faint)]">{k}</dt>
+            <dd className="min-w-0 truncate text-right text-xs font-medium text-[var(--text)]">{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 function AppointmentCard({ a }: { a: Appt }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);  // details expanded by default
+  const services = a.services ?? [];       // tolerate an older backend payload
   const hasVehicle = a.vehicle && a.vehicle !== "Vehicle TBD";
-  const details: [string, ReactNode][] = [];
-  if (a.service_requested) details.push(["Service requested", a.service_requested]);
-  // Vehicle is always shown so it's clear where it lives; details fill in when
-  // the customer selected a vehicle at booking.
-  details.push(["Vehicle", hasVehicle ? a.vehicle : <span className="text-[var(--text-faint)]">Not selected at booking</span>]);
-  if (a.vin) details.push(["VIN", <span className="font-mono">{a.vin}</span>]);
-  if (a.license_plate) details.push(["License plate", a.license_plate]);
-  if (a.mileage) details.push(["Mileage", `${a.mileage} mi`]);
-  if (a.color) details.push(["Color", a.color]);
-  if (a.engine) details.push(["Engine", a.engine]);
-  if (a.trim) details.push(["Trim", a.trim]);
-  if (a.phone) details.push(["Phone", a.phone]);
-  if (a.email) details.push(["Email", a.email]);
-  if (a.company) details.push(["Company", a.company]);
-  if (a.transport) details.push(["Transport", a.transport]);
-  if (a.recall) details.push(["Recall", "Yes"]);
-  if (a.source) details.push(["Booked via", a.source]);
-  if (a.booked_at) details.push(["Booked at", `${fmtD(a.booked_at)} ${fmtT(a.booked_at)}`]);
-  details.push(["Text reminder", a.text_reminder ? "On" : "Off"]);
-  if (a.internal_notes) details.push(["Notes", a.internal_notes]);
+
+  // Customer + vehicle facts
+  const customer: [string, ReactNode][] = [
+    ["Full name", a.customer_name],
+  ];
+  if (a.phone) customer.push(["Phone", a.phone]);
+  else customer.push(["Phone", <span className="text-[var(--text-faint)]">—</span>]);
+  if (a.company) customer.push(["Company", a.company]);
+
+  const vehicle: [string, ReactNode][] = [
+    ["Vehicle", hasVehicle ? a.vehicle : <span className="text-[var(--text-faint)]">Not selected at booking</span>],
+  ];
+  if (a.vin) vehicle.push(["VIN", <span className="font-mono text-[11px]">{a.vin}</span>]);
+  if (a.license_plate) vehicle.push(["License plate", a.license_plate]);
+  if (a.mileage) vehicle.push(["Mileage", `${a.mileage} mi`]);
+  if (a.color) vehicle.push(["Color", a.color]);
+  if (a.engine) vehicle.push(["Engine", a.engine]);
+  if (a.trim) vehicle.push(["Trim", a.trim]);
+
+  // Booking meta
+  const meta: [string, ReactNode][] = [];
+  if (a.transport) meta.push(["Transport", a.transport]);
+  if (a.recall) meta.push(["Recall", "Yes"]);
+  if (a.source) meta.push(["Booked via", a.source]);
+  if (a.booked_at) meta.push(["Booked at", `${fmtD(a.booked_at)} ${fmtT(a.booked_at)}`]);
+  meta.push(["Text reminder", a.text_reminder ? "On" : "Off"]);
+  if (a.internal_notes) meta.push(["Notes", a.internal_notes]);
 
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)]">
@@ -407,15 +441,48 @@ function AppointmentCard({ a }: { a: Appt }) {
       </button>
 
       {open && (
-        <div className="border-t border-[var(--border)] px-4 py-3">
-          <dl className="grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
-            {details.map(([k, v], i) => (
-              <div key={i} className="flex justify-between gap-3 border-b border-dashed border-[var(--border)] py-0.5 last:border-0">
-                <dt className="shrink-0 text-xs text-[var(--text-faint)]">{k}</dt>
-                <dd className="min-w-0 truncate text-right text-xs font-medium text-[var(--text)]">{v}</dd>
+        <div className="space-y-3 border-t border-[var(--border)] px-4 py-3">
+          {/* customer + vehicle, side by side */}
+          <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+            <FactList title="Customer" rows={customer} />
+            <FactList title="Vehicle" rows={vehicle} />
+          </div>
+
+          {/* op-code service lines (real DMS operations booked) */}
+          {services.length > 0 && (
+            <div>
+              <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-[var(--text-faint)]">
+                Services / Op Codes
               </div>
-            ))}
-          </dl>
+              <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-[var(--surface-2)] text-left text-[10px] uppercase tracking-wide text-[var(--text-faint)]">
+                      <th className="px-2.5 py-1.5 font-semibold">Op Code</th>
+                      <th className="px-2.5 py-1.5 font-semibold">Service</th>
+                      <th className="px-2.5 py-1.5 text-right font-semibold">Duration</th>
+                      <th className="px-2.5 py-1.5 text-right font-semibold">Pay</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {services.map((s, i) => (
+                      <tr key={i} className="border-t border-[var(--border)]">
+                        <td className="px-2.5 py-1.5 font-mono font-semibold text-[var(--brand)]">{s.op_code ?? "—"}</td>
+                        <td className="px-2.5 py-1.5 text-[var(--text)]">{s.description ?? "—"}</td>
+                        <td className="px-2.5 py-1.5 text-right tabular-nums text-[var(--text-muted)]">
+                          {s.duration_mins ? `${s.duration_mins} min` : "—"}
+                        </td>
+                        <td className="px-2.5 py-1.5 text-right text-[var(--text-muted)]">{s.pay_type ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* booking meta */}
+          <FactList title="Booking" rows={meta} cols2 />
         </div>
       )}
     </div>
