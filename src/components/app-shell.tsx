@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { AuthProvider, useAuth } from "./auth-context";
+import { StoreSwitcher } from "./store-switcher";
 import { cn } from "./ui";
 
 // Left-sidebar navigation — matches the dispatcher board layout exactly.
@@ -59,13 +60,9 @@ function Sidebar() {
         })}
       </nav>
 
-      {/* store + user */}
+      {/* store switcher + user */}
       <div className="border-t border-white/10 p-3">
-        {dealer && (
-          <div className="mb-2 rounded-lg bg-white/10 px-3 py-2 text-center text-sm font-semibold">
-            {dealer.name}
-          </div>
-        )}
+        <StoreSwitcher />
         <div className="flex items-center gap-2.5 px-1">
           <span className="grid h-8 w-8 place-items-center rounded-full bg-[#3b82f6] text-xs font-semibold text-white">
             {initials(dealer?.name)}

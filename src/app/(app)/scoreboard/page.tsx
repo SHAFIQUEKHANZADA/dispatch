@@ -4,6 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { Spinner, cn } from "@/components/ui";
 
+const RANK_LABEL: Record<string, string> = {
+  efficiency: "Efficiency",
+  total_hours: "Billed Hours",
+  ro_count: "RO Volume",
+  csi: "CSI",
+  sales_ro: "Sales / RO",
+};
+
 interface Column {
   key: string;
   header: string;
@@ -176,7 +184,7 @@ function Leaderboard({ data }: { data: Board }) {
           {isAdvisor ? "ADVISOR PERFORMANCE" : "TECHNICIAN PERFORMANCE"}
         </h2>
         <span className="text-xs text-[var(--text-faint)]">
-          Ranked by {isAdvisor ? "CSI" : "Efficiency"} · {data.period_label}
+          Ranked by {isAdvisor ? "CSI" : RANK_LABEL[data.rank_key ?? "efficiency"] ?? "Efficiency"} · {data.period_label}
         </span>
         <span className="ml-auto text-xs text-[var(--text-faint)]">
           {data.rows.length} {isAdvisor ? "advisors" : "technicians"}

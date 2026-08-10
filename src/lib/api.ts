@@ -13,6 +13,7 @@ export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000/api";
 
 const DEALER_KEY = "3dd.dealer_id";
+const STORE_KEY = "3dd.store_id";   // the selected multi-tenant store (dealer_key)
 
 export function getDealerId(): string | null {
   if (typeof window === "undefined") return null;
@@ -23,16 +24,32 @@ export function setDealerId(id: string) {
   window.localStorage.setItem(DEALER_KEY, id);
 }
 
+// --- multi-tenant store selection ---
+export function getStoreId(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(STORE_KEY);
+}
+
+export function setStoreId(storeId: string) {
+  window.localStorage.setItem(STORE_KEY, storeId);
+}
+
 export async function authHeader(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {};
+  // the selected store scopes EVERY request; the backend validates access
+  const store = getStoreId();
+  if (store) headers["X-Store-Key"] = store;
+
   if (supabaseConfigured) {
     const { data } = await getSupabase().auth.getSession();
     const token = data.session?.access_token;
-    if (token) return { Authorization: `Bearer ${token}` };
-    return {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return headers;
   }
   // dev fallback — no Supabase configured
   const dealer = getDealerId();
-  return dealer ? { "X-Dealer-Id": dealer } : {};
+  if (dealer) headers["X-Dealer-Id"] = dealer;
+  return headers;
 }
 
 export class ApiError extends Error {
