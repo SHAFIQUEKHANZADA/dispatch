@@ -42,6 +42,7 @@ interface Timeline {
     idle: number;
     unplanned: number;
     back_soon: number;
+    held?: number;
     assigned: number;
     available: number;
     unassigned: number;
@@ -71,11 +72,13 @@ const LEGEND_SWATCH: Record<string, string> = {
   unallocated: "bg-[#f59e0b]",
   off_shift: "bg-[repeating-linear-gradient(45deg,#e5e7eb,#e5e7eb_4px,#f3f4f6_4px,#f3f4f6_8px)]",
 };
+// Solid vivid pills with white text — exact colors from the owner's mockup
+// (.status-pill): NO PLAN = green, LUNCH/BACK = amber, IDLE = red.
 const CHIP_STYLE: Record<string, string> = {
-  no_plan: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  lunch: "bg-amber-50 text-amber-700 border-amber-200",
-  idle: "bg-red-50 text-red-700 border-red-200",
-  back_soon: "bg-amber-50 text-amber-700 border-amber-200",
+  no_plan: "bg-[#16a34a] text-white border-transparent",
+  lunch: "bg-[#f59e0b] text-white border-transparent",
+  idle: "bg-[#dc2626] text-white border-transparent",
+  back_soon: "bg-[#f59e0b] text-white border-transparent",
 };
 
 function fmtHour(min: number): string {
@@ -122,22 +125,23 @@ export default function DashboardTimelinePage() {
   return (
     <div className="flex h-screen flex-col">
       {/* ---------- top bar ---------- */}
-      <header className="flex min-h-[57px] items-center border-b border-[var(--border)] bg-[var(--surface)] px-5 py-2">
+      <header className="flex h-[62px] items-center border-b border-[var(--border)] bg-[var(--surface)] px-5 py-2">
         <div className="flex w-full flex-wrap items-center justify-between gap-3">
           <h1 className="text-lg font-semibold text-[var(--text)]">Dispatcher Dashboard</h1>
 
           <div className="flex items-center gap-2">
-            <div className="flex items-center rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] text-sm">
-              <button onClick={() => setDayOffset((d) => d - 1)} className="px-2 py-1.5 text-[var(--text-faint)] hover:text-[var(--text)]">‹</button>
-              <span className="px-2 py-1.5 font-medium text-[var(--text)]">{data?.date_label ?? "—"}</span>
-              <button onClick={() => setDayOffset((d) => d + 1)} className="px-2 py-1.5 text-[var(--text-faint)] hover:text-[var(--text)]">›</button>
+            {/* date nav + Today all inside one bordered pill (matches the mockup) */}
+            <div className="flex items-center gap-1 rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] p-1 text-sm">
+              <button onClick={() => setDayOffset((d) => d - 1)} className="px-2 py-1 text-[var(--text-faint)] hover:text-[var(--text)]">‹</button>
+              <span className="px-1 font-medium text-[var(--text)]">{data?.date_label ?? "—"}</span>
+              <button onClick={() => setDayOffset((d) => d + 1)} className="px-2 py-1 text-[var(--text-faint)] hover:text-[var(--text)]">›</button>
+              <button
+                onClick={() => { setDayOffset(0); load(); }}
+                className="rounded-md bg-[var(--brand)] px-3 py-1 text-sm font-semibold text-white hover:bg-[var(--brand-hover)]"
+              >
+                Today
+              </button>
             </div>
-            <button
-              onClick={() => { setDayOffset(0); load(); }}
-              className="rounded-lg bg-[var(--brand)] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[var(--brand-hover)]"
-            >
-              Today
-            </button>
             <select className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-2.5 py-1.5 text-sm text-[var(--text)] outline-none">
               <option>Full Day (7a–7p)</option>
               <option>Morning (7a–12p)</option>
@@ -152,19 +156,20 @@ export default function DashboardTimelinePage() {
                 <Pill tone="red" text={`${data.counters.idle} idle`} on={data.counters.idle > 0} />
                 <Pill tone="green" text={`${data.counters.unplanned} unplanned`} on={data.counters.unplanned > 0} />
                 <Pill tone="amber" text={`${data.counters.back_soon} back soon`} on={data.counters.back_soon > 0} />
+                <Pill tone="blue" text={`${data.counters.held ?? 0} held`} on={(data.counters.held ?? 0) > 0} />
                 <span className="ml-2 text-sm text-[var(--text-muted)]">
-                  Assigned: <b className="text-[var(--text)]">{data.counters.assigned}</b>
+                  Assigned: <b className="text-[#2563eb]">{data.counters.assigned}</b>
                 </span>
                 <span className="text-sm text-[var(--text-muted)]">
-                  Available: <b className="text-[var(--good)]">{data.counters.available}</b>
+                  Available: <b className="text-[#16a34a]">{data.counters.available}</b>
                 </span>
                 <span className="text-sm text-[var(--text-muted)]">
-                  Unassigned: <b className="text-[var(--warn)]">{data.counters.unassigned}</b>
+                  Unassigned: <b className="text-[#dc2626]">{data.counters.unassigned}</b>
                 </span>
               </>
             )}
-            <a href="/dispatch" className="ml-1 rounded-lg bg-[var(--brand)] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[var(--brand-hover)]">
-              + Upcoming ROs
+            <a href="/appointments" className="ml-1 rounded-lg bg-[var(--brand)] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[var(--brand-hover)]">
+              Appointments
             </a>
           </div>
         </div>
@@ -181,8 +186,8 @@ export default function DashboardTimelinePage() {
 
         {data && !loading && (
           <div className="min-w-[900px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 pb-3 card-elev">
-            {/* hour header */}
-            <div className="flex items-stretch rounded-t-lg bg-[var(--surface-2)] py-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-faint)]">
+            {/* hour header — full-bleed so it's flush with the card's top edge */}
+            <div className="-mx-3 flex items-stretch bg-[var(--surface-2)] px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-faint)]">
               <div className="w-52 shrink-0 pl-2">Technician</div>
               <div className="relative flex-1">
                 {hours.map((m) => (
@@ -271,7 +276,9 @@ function TechTrack({
           ? "bg-emerald-50/40 border-l-2 border-l-[var(--good)]"
           : "border-l-2 border-l-transparent";
   return (
-    <div className={cn("flex items-center border-b border-[var(--border)]/60 py-2", rowTint)}>
+    // -mx-3 px-3 cancels the card's horizontal padding so the row tint + colored
+    // left accent run flush to the card edge (no white gap), matching the mockup.
+    <div className={cn("-mx-3 flex items-center border-b border-[var(--border)]/60 py-2 pl-3 pr-3", rowTint)}>
       {/* tech identity */}
       <div className="flex w-52 shrink-0 items-center gap-2 pl-1">
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[11px] font-semibold text-white" style={{ background: hue(tech.name) }}>
@@ -313,7 +320,7 @@ function TechTrack({
               className={cn(
                 "absolute top-1 flex h-6 items-center justify-center overflow-hidden rounded px-1 text-[11px] font-medium",
                 BLOCK_STYLE[b.kind] ?? "bg-[var(--surface-3)]",
-                b.kind === "in_progress" && "animate-live",
+                b.kind === "in_progress" && (chip === "no_plan" ? "animate-flash" : "animate-live"),
               )}
               style={{ left: `${left}%`, width: `calc(${width}% - 2px)` }}
             >
@@ -344,15 +351,19 @@ function TechTrack({
   );
 }
 
-function Pill({ tone, text, on }: { tone: "red" | "green" | "amber"; text: string; on: boolean }) {
-  const tones: Record<string, string> = {
-    red: "bg-red-50 text-red-700 border-red-200",
-    green: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    amber: "bg-amber-50 text-amber-700 border-amber-200",
-  };
+// Exact colors from Reid's mockup (.att-chip): bg / text / dot per tone.
+const PILL_TONES: Record<string, { chip: string; dot: string }> = {
+  red:   { chip: "bg-[#fee2e2] text-[#991b1b]", dot: "bg-[#dc2626]" },  // idle
+  green: { chip: "bg-[#dcfce7] text-[#14532d]", dot: "bg-[#16a34a]" },  // unplanned
+  amber: { chip: "bg-[#fef3c7] text-[#92400e]", dot: "bg-[#f59e0b]" },  // back soon
+  blue:  { chip: "bg-[#dbeafe] text-[#1e40af]", dot: "bg-[#2563eb]" },  // held
+};
+
+function Pill({ tone, text, on }: { tone: "red" | "green" | "amber" | "blue"; text: string; on: boolean }) {
+  const t = PILL_TONES[tone];
   return (
-    <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium", on ? tones[tone] : "border-[var(--border)] text-[var(--text-faint)]")}>
-      <span className={cn("h-1.5 w-1.5 rounded-full", on && "animate-blink", tone === "red" ? "bg-red-500" : tone === "green" ? "bg-emerald-500" : "bg-amber-500")} />
+    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium", on ? t.chip : "border border-[var(--border)] text-[var(--text-faint)]")}>
+      <span className={cn("h-1.5 w-1.5 rounded-full", on ? t.dot : "bg-[var(--text-faint)]", on && "animate-blink")} />
       {text}
     </span>
   );

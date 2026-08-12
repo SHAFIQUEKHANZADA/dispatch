@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { Board, BoardRO, Candidate } from "@/lib/types";
 import { Button, GuardianBanner, Spinner } from "@/components/ui";
@@ -51,17 +51,12 @@ interface UpcomingResp {
   count?: number;
   appointments: Appt[];
 }
-const UPCOMING = "UPCOMING";
-
 export default function DispatchBoardPage() {
   const [board, setBoard] = useState<Board | null>(null);
   const [tab, setTab] = useState("READY_TO_DISPATCH");
   const [sort, setSort] = useState("flagged_written");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const [appts, setAppts] = useState<UpcomingResp | null>(null);
-  const [apptLoading, setApptLoading] = useState(false);
 
   const [dispatchTarget, setDispatchTarget] = useState<{
     ro: BoardRO;
@@ -76,7 +71,6 @@ export default function DispatchBoardPage() {
     board?.tabs.find((t) => t.key === "READY_TO_DISPATCH")?.count ?? 0;
 
   const load = useCallback(async () => {
-    if (tab === UPCOMING) { setLoading(false); return; }  // upcoming tab has its own fetch
     setLoading(true);
     setError(null);
     try {
@@ -94,22 +88,6 @@ export default function DispatchBoardPage() {
   useEffect(() => {
     load();
   }, [load]);
-
-  const loadAppts = useCallback(async () => {
-    setApptLoading(true);
-    try {
-      setAppts(await api.get<UpcomingResp>("/mykaarma/appointments/upcoming?days=14"));
-    } catch {
-      setAppts({ available: false, reason: "Could not reach myKaarma.", appointments: [] });
-    } finally {
-      setApptLoading(false);
-    }
-  }, []);
-
-  // fetch appointments up front so the tab count is populated
-  useEffect(() => {
-    loadAppts();
-  }, [loadAppts]);
 
   return (
     <div className="space-y-4 px-5 py-5">
@@ -175,38 +153,21 @@ export default function DispatchBoardPage() {
       {/* tabs + sort */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)]">
         <div className="flex flex-wrap gap-1">
-          {board?.tabs.map((t, i) => (
-            <Fragment key={t.key}>
-              <button
-                onClick={() => setTab(t.key)}
-                className={`relative -mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition ${
-                  tab === t.key
-                    ? "border-[var(--brand)] text-[var(--text)]"
-                    : "border-transparent text-[var(--text-muted)] hover:text-[var(--text)]"
-                }`}
-              >
-                {t.label}
-                <span className="rounded-full bg-[var(--surface-3)] px-1.5 text-[10px] font-mono">
-                  {t.count}
-                </span>
-              </button>
-              {/* Upcoming (myKaarma appointments) sits second — right after Open ROs */}
-              {i === 0 && (
-                <button
-                  onClick={() => setTab(UPCOMING)}
-                  className={`relative -mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition ${
-                    tab === UPCOMING
-                      ? "border-[var(--brand)] text-[var(--text)]"
-                      : "border-transparent text-[var(--text-muted)] hover:text-[var(--text)]"
-                  }`}
-                >
-                  Upcoming ROs
-                  <span className="rounded-full bg-[var(--surface-3)] px-1.5 text-[10px] font-mono">
-                    {appts?.count ?? 0}
-                  </span>
-                </button>
-              )}
-            </Fragment>
+          {board?.tabs.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`relative -mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition ${
+                tab === t.key
+                  ? "border-[var(--brand)] text-[var(--text)]"
+                  : "border-transparent text-[var(--text-muted)] hover:text-[var(--text)]"
+              }`}
+            >
+              {t.label}
+              <span className="rounded-full bg-[var(--surface-3)] px-1.5 text-[10px] font-mono">
+                {t.count}
+              </span>
+            </button>
           ))}
         </div>
         <div className="flex items-center gap-2 pb-2">
@@ -225,17 +186,13 @@ export default function DispatchBoardPage() {
         </div>
       </div>
 
-      {sort === "flagged_written" && tab !== UPCOMING && (
+      {sort === "flagged_written" && (
         <p className="-mt-2 text-[11px] text-[var(--text-faint)]">
           Flagged = customer waiting, heat case, comeback, or manager flag.
         </p>
       )}
 
-      {/* Upcoming appointments (myKaarma) */}
-      {tab === UPCOMING ? (
-        <UpcomingView data={appts} loading={apptLoading} onRefresh={loadAppts} />
-      ) : (
-        <>
+      <>
           {/* the board */}
           {loading && <Spinner label="Scoring the board…" />}
           {error && (
@@ -249,7 +206,7 @@ export default function DispatchBoardPage() {
             </div>
           )}
 
-          <div className="grid gap-3 xl:grid-cols-2">
+          <div className="space-y-3">
             {board?.ros.map((ro) => (
               <ROCard
                 key={ro.id}
@@ -258,8 +215,7 @@ export default function DispatchBoardPage() {
               />
             ))}
           </div>
-        </>
-      )}
+      </>
 
       <DispatchModal
         ro={dispatchTarget?.ro ?? null}

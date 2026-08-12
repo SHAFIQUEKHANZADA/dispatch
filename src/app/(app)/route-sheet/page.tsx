@@ -16,7 +16,21 @@ interface Row {
   hours: number;
   promised: string;
   carried_over: boolean;
+  progress: number;
   checks: Record<string, "ok" | "watch" | "behind" | null>;
+}
+
+// row wash (matches the mockup legend): working = green bar filling toward the
+// finish; queued = light-green stub at the RO#; done = full blue wash;
+// carry-overs & to-dispatch stay blank.
+function rowWash(r: Row): string | undefined {
+  if (r.carried_over) return undefined;
+  if (r.status === "done") return "linear-gradient(90deg, rgba(191,219,254,0.55), rgba(191,219,254,0.55))";
+  if (r.status === "working")
+    return `linear-gradient(90deg, rgba(134,239,172,0.5) 0%, rgba(134,239,172,0.5) ${r.progress}%, transparent ${r.progress}%)`;
+  if (r.status === "queued")
+    return "linear-gradient(90deg, rgba(187,247,208,0.65) 0%, rgba(187,247,208,0.65) 5%, transparent 5%)";
+  return undefined; // to_dispatch / waiter
 }
 interface Data {
   date_label: string;
@@ -39,6 +53,7 @@ export default function RouteSheetPage() {
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Row | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -112,12 +127,12 @@ export default function RouteSheetPage() {
                 <SectionRow color="bg-amber-400" label="Carried over from yesterday" count={data.carried_count} span={9 + data.check_columns.length} />
               )}
               {data.rows.filter((r) => r.carried_over).map((r) => (
-                <RowLine key={r.ro_number} r={r} checks={data.check_columns} />
+                <RowLine key={r.ro_number} r={r} checks={data.check_columns} onOpen={setSelected} />
               ))}
 
               <SectionRow color="bg-blue-500" label="New today" count={data.new_count} span={9 + data.check_columns.length} />
               {data.rows.filter((r) => !r.carried_over).map((r) => (
-                <RowLine key={r.ro_number} r={r} checks={data.check_columns} />
+                <RowLine key={r.ro_number} r={r} checks={data.check_columns} onOpen={setSelected} />
               ))}
             </tbody>
             <tfoot>
@@ -148,6 +163,60 @@ export default function RouteSheetPage() {
           </div>
         </div>
       )}
+
+      {selected && (
+        <RowDetailModal r={selected} checks={data?.check_columns ?? []} onClose={() => setSelected(null)} />
+      )}
+    </div>
+  );
+}
+
+function RowDetailModal({ r, checks, onClose }: { r: Row; checks: string[]; onClose: () => void }) {
+  const s = STATUS[r.status];
+  const payType = r.ser_sale === "W" ? "Warranty" : r.ser_sale === "I" ? "Internal" : "Customer Pay";
+  const rows: [string, ReactNode][] = [
+    ["Owner", r.owner],
+    ["License", <span className="font-mono">{r.license}</span>],
+    ["Pay type", payType],
+    ["Work", r.description],
+    ["Mechanic", r.mechanic ?? <span className="italic text-[var(--danger)]">Unassigned</span>],
+    ["Est. hours", `${r.hours.toFixed(1)} h`],
+    ["Promised", r.promised],
+    ["Status", s.label],
+  ];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-2xl bg-[var(--surface)] p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <span className="font-mono text-xl font-bold text-[var(--brand)]">RO {r.ro_number}</span>
+            <span className={cn("rounded px-2 py-0.5 text-[11px] font-bold", statusPill(r.status))}>{s.dot} {s.label}</span>
+          </div>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full text-[var(--text-faint)] hover:bg-[var(--surface-2)]">✕</button>
+        </div>
+        <dl className="space-y-0">
+          {rows.map(([k, v], i) => (
+            <div key={i} className="flex items-baseline justify-between gap-4 border-b border-[var(--border)] py-2 last:border-0">
+              <dt className="shrink-0 text-sm font-semibold text-[var(--text-muted)]">{k}</dt>
+              <dd className="min-w-0 text-right text-sm text-[var(--text)]">{v}</dd>
+            </div>
+          ))}
+          <div className="flex items-center justify-between gap-4 border-b border-[var(--border)] py-2 last:border-0">
+            <dt className="shrink-0 text-sm font-semibold text-[var(--text-muted)]">Foreman checks</dt>
+            <dd className="flex gap-2">
+              {checks.map((c) => (
+                <div key={c} className="grid h-11 w-14 place-items-center rounded-lg border border-[var(--border)] bg-[var(--surface-2)]">
+                  <div className="text-[9px] uppercase text-[var(--text-faint)]">{c}</div>
+                  <div className={r.checks[c] === "ok" ? "text-emerald-600" : "text-[var(--text-faint)]"}>{r.checks[c] === "ok" ? "✓" : "·"}</div>
+                </div>
+              ))}
+            </dd>
+          </div>
+        </dl>
+        <p className="mt-4 text-xs text-[var(--text-faint)]">
+          Read-only — assign or dispatch this RO from Available ROs or the dashboard.
+        </p>
+      </div>
     </div>
   );
 }
@@ -170,16 +239,20 @@ function SectionRow({ color, label, count, span }: { color: string; label: strin
   );
 }
 
-function RowLine({ r, checks }: { r: Row; checks: string[] }) {
+function RowLine({ r, checks, onOpen }: { r: Row; checks: string[]; onOpen: (r: Row) => void }) {
   const s = STATUS[r.status];
   const done = r.status === "done";
   const unassigned = !r.mechanic;
   return (
-    <tr className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface-2)]/50">
-      <td className="px-3 py-2 text-center tabular-nums text-[var(--text-faint)]">{r.no}</td>
-      <td className={cn("px-3 py-2 font-mono font-bold", done ? "text-[var(--text-faint)]" : "text-[var(--brand)]")}>{r.ro_number}</td>
-      <td className={cn("px-3 py-2", done ? "text-[var(--text-faint)]" : "text-[var(--text)]")}>{r.owner}</td>
-      <td className={cn("px-3 py-2 font-mono text-xs", done ? "text-[var(--text-faint)]" : "text-[var(--text-muted)]")}>{r.license}</td>
+    <tr
+      onClick={() => onOpen(r)}
+      style={{ background: rowWash(r) }}
+      className="cursor-pointer border-b border-[var(--border)] transition hover:brightness-[0.97] last:border-0"
+    >
+      <td className="px-3 py-2 text-center font-semibold tabular-nums text-[var(--text-muted)]">{r.no}</td>
+      <td className={cn("px-3 py-2 font-mono font-bold", done ? "text-[var(--text-muted)]" : "text-[var(--brand)]")}>{r.ro_number}</td>
+      <td className={cn("px-3 py-2 font-semibold", done ? "text-[var(--text-muted)]" : "text-[var(--text)]")}>{r.owner}</td>
+      <td className={cn("px-3 py-2 font-mono text-xs font-medium text-[var(--text-muted)]")}>{r.license}</td>
       <td className="px-3 py-2 text-center">
         <span className={cn("font-bold", r.ser_sale === "W" ? "text-orange-600" : r.ser_sale === "I" ? "text-violet-600" : "text-[var(--text-muted)]")}>
           {r.ser_sale}
@@ -190,14 +263,14 @@ function RowLine({ r, checks }: { r: Row; checks: string[] }) {
           <span className={cn("inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold", statusPill(r.status))}>
             <span>{s.dot}</span>{s.label}
           </span>
-          <span className={cn(done ? "text-[var(--text-muted)]" : "text-[var(--text)]")}>{r.description}</span>
+          <span className={cn("font-medium", done ? "text-[var(--text-muted)]" : "text-[var(--text)]")}>{r.description}</span>
         </span>
       </td>
       <td className="px-3 py-2">
         {unassigned ? (
-          <span className="font-semibold italic text-[var(--danger)]">Unassigned</span>
+          <span className="font-bold italic text-[var(--danger)]">Unassigned</span>
         ) : (
-          <span className={cn(done ? "text-[var(--text-faint)]" : "text-[var(--text)]")}>{r.mechanic}</span>
+          <span className={cn("font-semibold", done ? "text-[var(--text-muted)]" : "text-[var(--text)]")}>{r.mechanic}</span>
         )}
       </td>
       <td className="px-3 py-2 text-right tabular-nums text-[var(--text)]">{r.hours.toFixed(1)}</td>

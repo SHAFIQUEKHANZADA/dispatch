@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, getStoreId, setStoreId } from "@/lib/api";
+import { cn } from "./ui";
 
 interface Store {
   dealer_id: string;
@@ -52,11 +53,14 @@ export function StoreSwitcher() {
     <div className="relative mb-2" ref={ref}>
       <button
         onClick={() => multi && setOpen((o) => !o)}
-        className={`flex w-full items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-left text-sm font-semibold ${multi ? "hover:bg-white/15" : "cursor-default"}`}
+        className={cn(
+          "flex w-full items-center gap-2 rounded-md border border-[#3b82f6]/40 bg-[#3b82f6]/20 px-3 py-1.5 text-left text-xs font-semibold text-[#cfe3ff]",
+          multi ? "hover:bg-[#3b82f6]/30" : "cursor-default",
+        )}
       >
-        <span className="grid h-6 w-6 shrink-0 place-items-center rounded bg-white/15 text-[10px]">🏬</span>
+        <span className="grid h-5 w-5 shrink-0 place-items-center rounded bg-white/15 text-[10px]">🏬</span>
         <span className="min-w-0 flex-1 truncate">{current?.name ?? "Store"}</span>
-        {multi && <span className={`shrink-0 text-white/60 transition-transform ${open ? "rotate-180" : ""}`}>▾</span>}
+        {multi && <span className={`shrink-0 text-[#cfe3ff]/70 transition-transform ${open ? "rotate-180" : ""}`}>▾</span>}
       </button>
 
       {open && multi && (

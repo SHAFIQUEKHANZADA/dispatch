@@ -167,13 +167,13 @@ function RecRow({ ro, rank, busy, onAssign }: { ro: RecRO; rank: number; busy: b
   const color = BAR_COLOR[Math.min(rank - 1, 2)];
   return (
     <div className={cn("group relative flex items-center gap-3 rounded-lg border px-3 py-2", rank === 1 ? "border-[var(--good)]/40 bg-emerald-50/40" : "border-transparent hover:bg-[var(--surface-2)]")}>
-      <span className="w-3 text-center font-mono text-xs text-[var(--text-faint)]">{rank}</span>
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--surface-3)] text-[var(--text-muted)]">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M14.7 6.3a4 4 0 1 1 5 5L18 13l-6 6-4-4 6-6z"/><path d="M6 18l-2 2"/></svg>
+      <span className="w-4 text-center text-sm font-bold text-[var(--text-muted)]">{rank}</span>
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[var(--surface-3)] text-[var(--text)]">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
       </span>
       <div className="w-48 min-w-0">
-        <div className="truncate text-sm font-bold text-[var(--brand)]">RO #{ro.ro_number}</div>
-        <div className="truncate text-[11px] text-[var(--text-muted)]">
+        <div className="truncate text-base font-bold text-[var(--brand)]">RO #{ro.ro_number}</div>
+        <div className="truncate text-xs font-medium text-[var(--text-muted)]">
           {ro.vehicle} · {ro.concern_short}
         </div>
       </div>
@@ -193,7 +193,7 @@ function RecRow({ ro, rank, busy, onAssign }: { ro: RecRO; rank: number; busy: b
       </Button>
 
       {/* hover WHY tooltip */}
-      <div className="pointer-events-none absolute right-full top-1/2 z-40 mr-3 hidden w-[340px] -translate-y-1/2 group-hover:block">
+      <div className="pointer-events-none absolute bottom-full left-10 z-40 mb-2 hidden w-[340px] group-hover:block">
         <div className="relative rounded-2xl bg-[#111c2e] p-4 shadow-2xl ring-1 ring-white/10">
           <div className="flex items-center gap-4">
             <div className="shrink-0 border-r border-white/10 pr-4 text-center">
@@ -210,7 +210,7 @@ function RecRow({ ro, rank, busy, onAssign }: { ro: RecRO; rank: number; busy: b
               ))}
             </ul>
           </div>
-          <span className="absolute left-full top-1/2 -translate-y-1/2 border-[9px] border-transparent border-l-[#111c2e]" />
+          <span className="absolute left-6 top-full border-[9px] border-transparent border-t-[#111c2e]" />
         </div>
       </div>
     </div>

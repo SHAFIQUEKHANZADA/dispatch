@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { Spinner, cn } from "@/components/ui";
 
@@ -117,7 +117,7 @@ export default function ScoreboardPage() {
   return (
     <div className="flex h-screen flex-col">
       {/* header */}
-      <header className="flex min-h-[57px] items-center justify-between border-b border-[var(--border)] bg-[var(--surface)] px-5 py-2">
+      <header className="flex h-[62px] items-center justify-between border-b border-[var(--border)] bg-[var(--surface)] px-5 py-2">
         <h1 className="text-lg font-semibold text-[var(--text)]">Service Scoreboard</h1>
         <div className="flex items-center gap-3">
           <button
@@ -171,23 +171,67 @@ export default function ScoreboardPage() {
 
         {data && !loading && data.available && <Leaderboard data={data} />}
       </div>
+
+      {/* Facility Utilization — pinned to the bottom, always visible even with a
+          long advisor list (was scrolling below the fold before). */}
+      {data && !loading && data.available && view === "advisors" && data.facility_utilization != null && (
+        <div className="flex items-center gap-4 border-t border-[var(--border)] bg-[var(--surface)] px-5 py-3">
+          <span className="text-sm font-bold uppercase tracking-wide text-[var(--text-muted)]">
+            Facility Utilization
+          </span>
+          <div className="relative h-3 flex-1 overflow-hidden rounded-full bg-[var(--surface-3)]">
+            <div className="h-full rounded-full bg-[var(--good)]" style={{ width: `${data.facility_utilization}%` }} />
+          </div>
+          <span className="font-mono text-lg font-bold text-[var(--good)]">{data.facility_utilization}%</span>
+          <span className="max-w-[220px] text-[10px] text-[var(--text-faint)]">
+            Placeholder — confirm exact formula (sold/flagged hrs ÷ available capacity).
+          </span>
+        </div>
+      )}
     </div>
   );
 }
 
 function Leaderboard({ data }: { data: Board }) {
   const isAdvisor = data.view === "advisors";
+  // "Rank by" — re-sort the board by any column, live (matches the mockup).
+  const [rankBy, setRankBy] = useState<string | null>(null);
+  const rankKey = rankBy ?? data.rank_key ?? data.columns[0]?.key;
+
+  const rows = useMemo(() => {
+    const col = data.columns.find((c) => c.key === rankKey);
+    const sorted = [...data.rows].sort((a, b) => {
+      const av = a.values[rankKey], bv = b.values[rankKey];
+      const an = av == null ? -Infinity : av, bn = bv == null ? -Infinity : bv;
+      return col?.higher === false ? an - bn : bn - an; // lower-is-better cols sort asc
+    });
+    return sorted.map((r, i) => ({ ...r, rank: i + 1 }));
+  }, [data, rankKey]);
+
+  const rankHeader = data.columns.find((c) => c.key === rankKey)?.header
+    ?? RANK_LABEL[rankKey] ?? "Efficiency";
+
   return (
     <div>
-      <div className="mb-3 flex items-center gap-3">
+      <div className="mb-3 flex flex-wrap items-center gap-3">
         <h2 className={cn("text-xl font-extrabold tracking-tight", isAdvisor ? "text-[var(--brand)]" : "text-[var(--good)]")}>
           {isAdvisor ? "ADVISOR PERFORMANCE" : "TECHNICIAN PERFORMANCE"}
         </h2>
-        <span className="text-xs text-[var(--text-faint)]">
-          Ranked by {isAdvisor ? "CSI" : RANK_LABEL[data.rank_key ?? "efficiency"] ?? "Efficiency"} · {data.period_label}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-[var(--text-faint)]">Rank by</span>
+          <select
+            value={rankKey}
+            onChange={(e) => setRankBy(e.target.value)}
+            className="rounded-md border border-[var(--border-strong)] bg-[var(--surface)] px-2 py-1 text-xs font-medium text-[var(--text)] outline-none"
+          >
+            {data.columns.map((c) => (
+              <option key={c.key} value={c.key}>{c.header}</option>
+            ))}
+          </select>
+        </div>
+        <span className="text-xs text-[var(--text-faint)]">· {data.period_label}</span>
         <span className="ml-auto text-xs text-[var(--text-faint)]">
-          {data.rows.length} {isAdvisor ? "advisors" : "technicians"}
+          {rows.length} {isAdvisor ? "advisors" : "technicians"}
         </span>
       </div>
 
@@ -197,12 +241,12 @@ function Leaderboard({ data }: { data: Board }) {
             <tr className="text-left text-[11px] uppercase tracking-wide text-[var(--text-faint)]">
               <th className="px-4 py-3 font-medium">{isAdvisor ? "Advisor" : "Technician"}</th>
               {data.columns.map((c) => (
-                <th key={c.key} className="px-3 py-3 text-center font-medium">{c.header}</th>
+                <th key={c.key} className={cn("px-3 py-3 text-center font-medium", c.key === rankKey && "text-[var(--good)]")}>{c.header}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {data.rows.map((r) => (
+            {rows.map((r) => (
               <ScoreRow key={r.technician_id ?? r.advisor_id} row={r} columns={data.columns} />
             ))}
 
@@ -244,22 +288,6 @@ function Leaderboard({ data }: { data: Board }) {
           </tbody>
         </table>
       </div>
-
-      {/* facility utilization (advisor board) */}
-      {isAdvisor && data.facility_utilization != null && (
-        <div className="mt-4 flex items-center gap-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-5 py-4 card-elev">
-          <span className="text-sm font-bold uppercase tracking-wide text-[var(--text-muted)]">
-            Facility Utilization
-          </span>
-          <div className="relative h-3 flex-1 overflow-hidden rounded-full bg-[var(--surface-3)]">
-            <div className="h-full rounded-full bg-[var(--good)]" style={{ width: `${data.facility_utilization}%` }} />
-          </div>
-          <span className="font-mono text-lg font-bold text-[var(--good)]">{data.facility_utilization}%</span>
-          <span className="max-w-[220px] text-[10px] text-[var(--text-faint)]">
-            Placeholder — confirm exact formula (sold/flagged hrs ÷ available capacity).
-          </span>
-        </div>
-      )}
     </div>
   );
 }
