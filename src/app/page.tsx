@@ -75,12 +75,12 @@ export default function LandingPage() {
               >
                 Log In
               </Link>
-              <a
-                href="#demo"
+              <Link
+                href="/demo"
                 className="inline-flex items-center gap-2 rounded-lg bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-[#2563eb]/20 transition hover:bg-[#1d4ed8]"
               >
                 Request Demo <span aria-hidden>→</span>
-              </a>
+              </Link>
             </div>
           </header>
 
@@ -103,12 +103,12 @@ export default function LandingPage() {
             </p>
 
             <div className="mt-8 flex flex-wrap items-center gap-4">
-              <a
-                href="#demo"
+              <Link
+                href="/demo"
                 className="inline-flex items-center gap-2 rounded-lg bg-[#2563eb] px-6 py-3.5 text-base font-semibold text-white shadow-lg shadow-[#2563eb]/25 transition hover:bg-[#1d4ed8]"
               >
                 Request a Demo <span aria-hidden>→</span>
-              </a>
+              </Link>
               <Link
                 href="/dispatch"
                 className="inline-flex items-center gap-2.5 rounded-lg border border-white/20 bg-black/20 px-6 py-3.5 text-base font-semibold text-white backdrop-blur-sm transition hover:border-white/40 hover:bg-white/5"
@@ -169,7 +169,17 @@ export default function LandingPage() {
 
         <footer className="flex flex-col items-center justify-between gap-3 border-t border-white/10 py-6 text-sm text-white/50 sm:flex-row">
           <span>© {new Date().getFullYear()} Zenvyk · 3D Dispatch™</span>
-          <span>Data Driven Decisions</span>
+          <div className="flex items-center gap-5">
+            <a
+              href="https://www.mcgrathhonda.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition hover:text-white"
+            >
+              McGrath Honda ↗
+            </a>
+            <span>Data Driven Decisions</span>
+          </div>
         </footer>
       </div>
     </div>
