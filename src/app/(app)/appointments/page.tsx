@@ -5,12 +5,39 @@ import { api, ApiError } from "@/lib/api";
 import { Spinner, cn } from "@/components/ui";
 
 interface Hold { kind: string; label: string; reserve?: string }
+interface ApptService {
+  op_code: string | null;
+  description: string | null;
+  duration_mins: number | null;
+  price: number | null;
+  pay_type: string | null;
+  operation_type: string | null;
+}
 interface Appt {
   appointment_uuid: string;
   customer_name: string;
+  company: string | null;
+  phone: string | null;
+  email: string | null;
   vehicle: string;
+  vin: string | null;
+  license_plate: string | null;
+  mileage: string | number | null;
+  color: string | null;
+  engine: string | null;
+  trim: string | null;
   service_requested: string | null;
+  services: ApptService[];
+  transport: string | null;
+  internal_notes: string | null;
+  recall: boolean;
+  source: string | null;
+  status: string | null;
+  order_number: string | null;
+  has_order: boolean;
+  booked_at: string | null;
   start_time: string | null;
+  end_time: string | null;
   complexity: "HIGH" | "MID" | "LOW";
   show_pct: number | null;
   lifecycle: "scheduled" | "arrived" | "no_show";
@@ -28,7 +55,9 @@ function fmtT(s: string | null) {
   if (!s) return "—";
   const d = new Date(s.replace(" ", "T"));
   if (isNaN(d.getTime())) return s;
-  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase().replace(" ", "");
+  // Force 12-hour AM/PM regardless of the viewer's OS locale (a 24-hour locale
+  // was rendering "15:00" instead of "3:00 PM").
+  return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 }
 function fmtDateLabel(s: string | null) {
   if (!s) return "";
@@ -55,6 +84,7 @@ export default function AppointmentsPage() {
   const [data, setData] = useState<Board | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Appt | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -132,7 +162,11 @@ export default function AppointmentsPage() {
               </thead>
               <tbody>
                 {appts.map((a) => (
-                  <tr key={a.appointment_uuid} className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface-2)]/50">
+                  <tr
+                    key={a.appointment_uuid}
+                    onClick={() => setSelected(a)}
+                    className="cursor-pointer border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface-2)]/50"
+                  >
                     <td className="px-3 py-3 align-top">
                       <div className="font-semibold text-[var(--text)]">{fmtT(a.start_time)}</div>
                       <div className="text-[11px] text-[var(--text-muted)] whitespace-nowrap">{fmtShortD(a.start_time)}</div>
@@ -177,11 +211,140 @@ export default function AppointmentsPage() {
           </div>
 
           <p className="mt-3 text-[11px] text-[var(--text-faint)]">
-            Time · customer · vehicle · concern come live from myKaarma. Complexity + capacity holds are computed from your real roster.
+            Click any row to see the full appointment. Time · customer · vehicle · concern come live from myKaarma. Complexity + capacity holds are computed from your real roster.
             <b> Show %</b> is an estimate from booking signals — it becomes a true prediction once no-show history is fed in.
           </p>
         </>
       )}
+
+      {selected && <ApptModal appt={selected} onClose={() => setSelected(null)} />}
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------------- */
+/* Appointment detail popup                                                    */
+/* --------------------------------------------------------------------------- */
+
+function fmtDateTime(s: string | null) {
+  if (!s) return "—";
+  const d = new Date(s.replace(" ", "T"));
+  if (isNaN(d.getTime())) return s;
+  return d.toLocaleString("en-US", {
+    weekday: "short", month: "short", day: "numeric", year: "numeric",
+    hour: "numeric", minute: "2-digit", hour12: true,
+  });
+}
+function fmtMoney(n: number | null) {
+  if (n == null) return null;
+  return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function ApptModal({ appt, onClose }: { appt: Appt; onClose: () => void }) {
+  const hold = appt.capacity_hold;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-8"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-2xl rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* header */}
+        <div className="flex items-start justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-bold text-[var(--text)]">{appt.customer_name}</h2>
+              <span className={cn("rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase", CX[appt.complexity])}>{appt.complexity}</span>
+              {appt.recall && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-800">Recall</span>}
+            </div>
+            <div className="mt-0.5 text-sm text-[var(--text-muted)]">{appt.vehicle}{appt.company ? ` · ${appt.company}` : ""}</div>
+          </div>
+          <button onClick={onClose} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--text-faint)] hover:bg-[var(--surface-2)]" aria-label="Close">✕</button>
+        </div>
+
+        <div className="max-h-[70vh] overflow-y-auto px-5 py-4">
+          {/* appointment */}
+          <Section title="Appointment">
+            <Field label="Date / time" value={fmtDateTime(appt.start_time)} />
+            <Field label="Ends" value={appt.end_time ? fmtDateTime(appt.end_time) : "—"} />
+            <Field label="Transport" value={appt.transport || "—"} />
+            <Field label="Status" value={appt.status || "—"} />
+            <Field label="Show likelihood" value={appt.show_pct == null ? "—" : `${appt.show_pct}%`} />
+            <Field
+              label="Capacity hold"
+              value={hold.reserve ? `${hold.label} · reserve ${hold.reserve}` : hold.label}
+            />
+          </Section>
+
+          {/* contact */}
+          <Section title="Customer">
+            <Field label="Phone" value={appt.phone || "—"} />
+            <Field label="Email" value={appt.email || "—"} />
+            <Field label="Source" value={appt.source || "—"} />
+            <Field label="Booked" value={appt.booked_at ? fmtDateTime(appt.booked_at) : "—"} />
+          </Section>
+
+          {/* vehicle */}
+          <Section title="Vehicle">
+            <Field label="VIN" value={appt.vin || "—"} />
+            <Field label="Plate" value={appt.license_plate || "—"} />
+            <Field label="Mileage" value={appt.mileage != null && appt.mileage !== "" ? String(appt.mileage) : "—"} />
+            <Field label="Color" value={appt.color || "—"} />
+            <Field label="Engine" value={appt.engine || "—"} />
+            <Field label="Trim" value={appt.trim || "—"} />
+          </Section>
+
+          {/* services */}
+          <div className="mb-4">
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Services requested</div>
+            {appt.services && appt.services.length > 0 ? (
+              <div className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]">
+                {appt.services.map((s, i) => (
+                  <div key={i} className="flex items-start justify-between gap-3 px-3 py-2">
+                    <div>
+                      <div className="text-sm font-medium text-[var(--text)]">{s.description || s.op_code || "Service"}</div>
+                      <div className="text-[11px] text-[var(--text-faint)]">
+                        {[s.op_code, s.pay_type, s.duration_mins ? `${s.duration_mins} min` : null].filter(Boolean).join(" · ") || "—"}
+                      </div>
+                    </div>
+                    {fmtMoney(s.price) && <div className="shrink-0 text-sm font-semibold text-[var(--text)]">{fmtMoney(s.price)}</div>}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-[var(--border-strong)] px-3 py-3 text-sm text-[var(--text-muted)]">
+                {appt.service_requested || "No operations selected at booking."}
+              </div>
+            )}
+          </div>
+
+          {appt.internal_notes && (
+            <div>
+              <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Internal notes</div>
+              <div className="rounded-lg bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text)]">{appt.internal_notes}</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="mb-4">
+      <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">{title}</div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2">{children}</div>
+    </div>
+  );
+}
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[11px] text-[var(--text-faint)]">{label}</div>
+      <div className="text-sm text-[var(--text)] break-words">{value}</div>
     </div>
   );
 }
