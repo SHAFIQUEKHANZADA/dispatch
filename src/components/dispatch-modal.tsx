@@ -26,6 +26,7 @@ export function DispatchModal({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ name: string; notify_status: string | null } | null>(null);
 
   if (!ro || !cand) return null;
   const isOverride = rank > 1;
@@ -34,18 +35,52 @@ export function DispatchModal({
     setBusy(true);
     setError(null);
     try {
-      await api.post("/dispatch/assign", {
+      const res = await api.post<{ notify_status: string | null }>("/dispatch/assign", {
         ro_id: ro!.id,
         technician_id: cand!.technician_id,
         override_reason: isOverride && reason ? reason : null,
       });
       setReason("");
-      onDone();
+      // Show the notification outcome before closing, so the owner sees the tech was texted.
+      setResult({ name: cand!.name, notify_status: res?.notify_status ?? null });
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e));
     } finally {
       setBusy(false);
     }
+  }
+
+  function finish() {
+    setResult(null);
+    onDone();
+  }
+
+  if (result) {
+    const texted = result.notify_status === "sent" || result.notify_status === "delivered";
+    return (
+      <Modal open={open} onClose={finish} title={`Dispatched RO #${ro.ro_number}`}>
+        <div className="space-y-4">
+          <div className="rounded-lg bg-[var(--surface-2)] px-4 py-4 text-center">
+            <div className="text-3xl">{texted ? "📱✅" : "✅"}</div>
+            <div className="mt-2 text-sm font-semibold text-[var(--text)]">
+              {result.name.split(" ")[0]} is assigned to RO #{ro.ro_number}
+            </div>
+            <div className="mt-1 text-xs">
+              {texted ? (
+                <span className="font-semibold text-emerald-600">Technician texted ✓ — notified instantly</span>
+              ) : result.notify_status === "queued" ? (
+                <span className="font-semibold text-amber-600">Notification pending (GHL not fully set up yet)</span>
+              ) : (
+                <span className="font-semibold text-rose-600">Text not sent — check the tech has a phone number on file</span>
+              )}
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button variant="primary" onClick={finish}>Done</Button>
+          </div>
+        </div>
+      </Modal>
+    );
   }
 
   return (

@@ -18,6 +18,7 @@ interface Row {
   carried_over: boolean;
   progress: number;
   checks: Record<string, "ok" | "watch" | "behind" | null>;
+  notified: "sent" | "delivered" | "failed" | "queued" | null;
 }
 
 // row wash (matches the mockup legend): working = green bar filling toward the
@@ -180,6 +181,7 @@ function RowDetailModal({ r, checks, onClose }: { r: Row; checks: string[]; onCl
     ["Pay type", payType],
     ["Work", r.description],
     ["Mechanic", r.mechanic ?? <span className="italic text-[var(--danger)]">Unassigned</span>],
+    ...(r.mechanic ? ([["Tech notified", notifyLabel(r.notified)]] as [string, ReactNode][]) : []),
     ["Est. hours", `${r.hours.toFixed(1)} h`],
     ["Promised", r.promised],
     ["Status", s.label],
@@ -223,6 +225,23 @@ function RowDetailModal({ r, checks, onClose }: { r: Row; checks: string[]; onCl
 
 function Th({ children, className }: { children: ReactNode; className?: string }) {
   return <th className={cn("px-3 py-2.5 font-bold", className)}>{children}</th>;
+}
+
+// Shows the owner that the assigned tech was texted (SMS via GHL).
+function NotifyBadge({ n }: { n: Row["notified"] }) {
+  if (!n) return null;
+  if (n === "sent" || n === "delivered")
+    return <span title="Technician texted" className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">Texted ✓</span>;
+  if (n === "queued")
+    return <span title="Notification pending" className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">Pending</span>;
+  return <span title="Text not delivered" className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700">Not sent</span>;
+}
+
+function notifyLabel(n: Row["notified"]): string {
+  if (n === "sent" || n === "delivered") return "Texted ✓";
+  if (n === "queued") return "Pending";
+  if (n === "failed") return "Not delivered";
+  return "—";
 }
 
 function SectionRow({ color, label, count, span }: { color: string; label: string; count: number; span: number }) {
@@ -270,7 +289,10 @@ function RowLine({ r, checks, onOpen }: { r: Row; checks: string[]; onOpen: (r: 
         {unassigned ? (
           <span className="font-bold italic text-[var(--danger)]">Unassigned</span>
         ) : (
-          <span className={cn("font-semibold", done ? "text-[var(--text-muted)]" : "text-[var(--text)]")}>{r.mechanic}</span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className={cn("font-semibold", done ? "text-[var(--text-muted)]" : "text-[var(--text)]")}>{r.mechanic}</span>
+            <NotifyBadge n={r.notified} />
+          </span>
         )}
       </td>
       <td className="px-3 py-2 text-right tabular-nums text-[var(--text)]">{r.hours.toFixed(1)}</td>
