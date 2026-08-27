@@ -16,6 +16,7 @@ const NAV = [
   { href: "/route-sheet", label: "Route Sheet", icon: <IconRoute /> },
   { href: "/appointments", label: "Appointments", icon: <IconCalendar /> },
   { href: "/loaners", label: "Loaners", icon: <IconCar /> },
+  { href: "/warranty", label: "Warranty Audit", icon: <IconShield /> },
   { href: "/reports", label: "Reports", icon: <IconChart /> },
   { href: "/store-settings", label: "Store Settings", icon: <IconStore /> },
   { href: "/scoreboard-settings", label: "Scoreboard Settings", icon: <IconSliders /> },
@@ -136,6 +137,7 @@ function IconRoute() { return <svg {...ip}><circle cx="6" cy="19" r="2"/><circle
 function IconCalendar() { return <svg {...ip}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>; }
 function IconCar() { return <svg {...ip}><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13"/><path d="M4 13h16v4a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><circle cx="7.5" cy="15.5" r="0.5"/><circle cx="16.5" cy="15.5" r="0.5"/></svg>; }
 function IconChart() { return <svg {...ip}><path d="M3 3v18h18"/><path d="M7 15l3-4 3 2 4-6"/></svg>; }
+function IconShield() { return <svg {...ip}><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>; }
 function IconStore() { return <svg {...ip}><path d="M3 9l1.5-5h15L21 9M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M3 9h18"/></svg>; }
 function IconSliders() { return <svg {...ip}><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>; }
 function IconLogout() { return <svg {...ip}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>; }
