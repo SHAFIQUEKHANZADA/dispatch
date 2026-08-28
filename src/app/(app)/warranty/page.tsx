@@ -80,13 +80,25 @@ export default function WarrantyPage() {
     setError(null);
     setNote(null);
     try {
-      const r = await api.post<{ message: string }>("/warranty/audit/batch");
+      // Returns immediately: the server audits the not-yet-audited ROs in the
+      // background, so the browser never waits (and never times out mid-run).
+      const r = await api.post<{ message: string; queued: number }>("/warranty/audit/batch");
       setNote(r.message);
       await load();
+      if (r.queued > 0) pollForResults();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Results arrive one-by-one in the background (~15s each). Reload a few times
+  // so the table and counts fill in without the user having to refresh.
+  async function pollForResults() {
+    for (let i = 0; i < 20; i++) {
+      await new Promise((res) => setTimeout(res, 8000));
+      await load();
     }
   }
 
