@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { api, ApiError } from "@/lib/api";
 import { Spinner, cn } from "@/components/ui";
 
@@ -51,13 +52,39 @@ interface Timeline {
   legend: { kind: string; label: string }[];
 }
 
+/* ---------------- reverse-dispatch panel (click a tech's open time) ---------------- */
+interface WhyReason { factor: string; text: string; points: number }
+interface DispatchOption {
+  ro_id: string;
+  ro_number: string;
+  vehicle: string;
+  concern: string | null;
+  concern_short: string | null;
+  priority: string | null;
+  is_flagged: boolean;
+  est_hours: number;
+  score: number;
+  best_fit: boolean;
+  confident: boolean;
+  reasons: WhyReason[];
+  warnings: string[];
+}
+interface DispatchOptions {
+  technician_id: string;
+  name: string;
+  initials: string;
+  total_matches: number;
+  options: DispatchOption[];
+}
+
 /* ---------------- block styling ---------------- */
 const BLOCK_STYLE: Record<string, string> = {
   completed: "bg-[#3b82f6] text-white",
   in_progress: "bg-[#16a34a] text-white",
   queued: "bg-[#86efac] text-[#14532d]",
-  idle_needs: "bg-[repeating-linear-gradient(45deg,#fecaca,#fecaca_6px,#fee2e2_6px,#fee2e2_12px)] text-[#991b1b] ring-1 ring-inset ring-[#ef4444]",
-  idle_lost: "bg-[repeating-linear-gradient(45deg,#fce7f3,#fce7f3_5px,#fbcfe8_5px,#fbcfe8_10px)] text-[#9d174d] ring-1 ring-inset ring-dashed ring-[#ec4899]",
+  // Owner's build v2.3: "idle / downtime is now SOLID red (was a pale-red hash)."
+  idle_needs: "bg-[#ef4444] text-white",
+  idle_lost: "bg-[#b91c1c] text-white",
   lunch: "bg-[var(--surface-3)] text-[var(--text-muted)]",
   unallocated: "bg-[#f59e0b]/85 text-white",
   off_shift: "bg-[repeating-linear-gradient(45deg,#e5e7eb,#e5e7eb_6px,#f3f4f6_6px,#f3f4f6_12px)] text-[var(--text-faint)]",
@@ -66,8 +93,8 @@ const LEGEND_SWATCH: Record<string, string> = {
   completed: "bg-[#3b82f6]",
   in_progress: "bg-[#16a34a]",
   queued: "bg-[#86efac]",
-  idle_needs: "bg-[repeating-linear-gradient(45deg,#fecaca,#fecaca_4px,#fee2e2_4px,#fee2e2_8px)] ring-1 ring-inset ring-[#ef4444]",
-  idle_lost: "bg-[repeating-linear-gradient(45deg,#fce7f3,#fce7f3_4px,#fbcfe8_4px,#fbcfe8_8px)]",
+  idle_needs: "bg-[#ef4444]",
+  idle_lost: "bg-[#b91c1c]",
   lunch: "bg-[var(--surface-3)]",
   unallocated: "bg-[#f59e0b]",
   off_shift: "bg-[repeating-linear-gradient(45deg,#e5e7eb,#e5e7eb_4px,#f3f4f6_4px,#f3f4f6_8px)]",
@@ -94,6 +121,7 @@ export default function DashboardTimelinePage() {
   const [error, setError] = useState<string | null>(null);
   const [showOff, setShowOff] = useState(false);
   const [dayOffset, setDayOffset] = useState(0);
+  const [openTechId, setOpenTechId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -127,8 +155,8 @@ export default function DashboardTimelinePage() {
       {/* ---------- top bar ---------- */}
       <header className="flex h-[62px] items-center border-b border-[var(--border)] bg-[var(--surface)] px-5 py-2">
         <div className="flex w-full flex-wrap items-center justify-between gap-3">
-          <h1 className="text-lg font-semibold text-[var(--text)]">Dispatcher Dashboard</h1>
-
+          {/* No page title — matches the DataDriven layout: one clean line with
+              the date controls on the left and the status pills on the right. */}
           <div className="flex items-center gap-2">
             {/* date nav + Today all inside one bordered pill (matches the mockup) */}
             <div className="flex items-center gap-1 rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] p-1 text-sm">
@@ -220,7 +248,25 @@ export default function DashboardTimelinePage() {
                   </div>
 
                   {g.techs.map((t) => (
-                    <TechTrack key={t.id} tech={t} pctOf={pctOf} hours={hours} />
+                    <div key={t.id}>
+                      <TechTrack
+                        tech={t}
+                        pctOf={pctOf}
+                        hours={hours}
+                        isOpen={openTechId === t.id}
+                        onToggle={() => setOpenTechId((cur) => (cur === t.id ? null : t.id))}
+                      />
+                      {openTechId === t.id && (
+                        <DispatchPanel
+                          tech={t}
+                          onClose={() => setOpenTechId(null)}
+                          onDispatched={() => {
+                            setOpenTechId(null);
+                            load();
+                          }}
+                        />
+                      )}
+                    </div>
                   ))}
                 </div>
               ))}
@@ -257,14 +303,187 @@ export default function DashboardTimelinePage() {
   );
 }
 
+const TIER_LABEL: Record<string, string> = { HIGH: "Tier A", MEDIUM: "Tier B", LOW: "Tier C" };
+
+function WhyTip({ o }: { o: DispatchOption }) {
+  const pos = o.reasons.filter((r) => r.points > 0);
+  const neutral = o.reasons.filter((r) => r.points <= 0);
+  return (
+    <div className="pointer-events-none absolute right-0 top-6 z-30 hidden w-64 rounded-lg bg-[#111827] p-3 text-left text-white shadow-xl group-hover:block">
+      <div className="mb-1.5 flex items-center gap-2 border-b border-white/10 pb-1.5">
+        <span className="text-lg font-bold text-emerald-400">{o.score}</span>
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-white/50">Match · why?</span>
+      </div>
+      <ul className="space-y-1 text-[11px] leading-snug">
+        {pos.map((r, i) => (
+          <li key={`p${i}`} className="flex gap-1.5">
+            <span className="text-emerald-400">✓</span>
+            <span>{r.text}</span>
+          </li>
+        ))}
+        {o.warnings.map((w, i) => (
+          <li key={`w${i}`} className="flex gap-1.5">
+            <span className="text-amber-400">!</span>
+            <span>{w}</span>
+          </li>
+        ))}
+        {neutral.map((r, i) => (
+          <li key={`n${i}`} className="flex gap-1.5 text-white/45">
+            <span>·</span>
+            <span>{r.text}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function DispatchPanel({
+  tech,
+  onClose,
+  onDispatched,
+}: {
+  tech: TechRow;
+  onClose: () => void;
+  onDispatched: () => void;
+}) {
+  const [data, setData] = useState<DispatchOptions | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const [busyRo, setBusyRo] = useState<string | null>(null);
+  const [secs, setSecs] = useState(45);
+  const [paused, setPaused] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .get<DispatchOptions>(`/technicians/${tech.id}/dispatch-options?limit=6`)
+      .then((d) => alive && setData(d))
+      .catch((e) => alive && setError(e instanceof ApiError ? e.message : String(e)))
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [tech.id]);
+
+  // auto-close countdown (pauses while the dispatcher is hovering the panel)
+  useEffect(() => {
+    if (paused) return;
+    if (secs <= 0) {
+      onClose();
+      return;
+    }
+    const t = setTimeout(() => setSecs((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [secs, paused, onClose]);
+
+  async function dispatch(o: DispatchOption) {
+    setBusyRo(o.ro_id);
+    setError(null);
+    try {
+      await api.post("/dispatch/assign", { ro_id: o.ro_id, technician_id: tech.id });
+      onDispatched();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e));
+      setBusyRo(null);
+    }
+  }
+
+  const opts = data?.options ?? [];
+  const shown = showAll ? opts : opts.slice(0, 3);
+
+  return (
+    <div
+      className="-mx-3 border-b border-[var(--border)] bg-[var(--surface-2)] px-5 py-3"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+    >
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-sm font-semibold text-[var(--text)]">
+          Dispatch an RO to <span className="text-[var(--brand,#2563eb)]">{tech.name}</span>
+          <span className="ml-2 text-xs font-normal text-[var(--text-faint)]">
+            auto-closes in {secs}s
+          </span>
+        </div>
+        <button onClick={onClose} className="text-[var(--text-faint)] hover:text-[var(--text)]" aria-label="Close">
+          ✕
+        </button>
+      </div>
+
+      {loading && <div className="py-4 text-sm text-[var(--text-muted)]">Finding best matches…</div>}
+      {error && <div className="py-2 text-sm text-[var(--danger)]">{error}</div>}
+      {!loading && !error && opts.length === 0 && (
+        <div className="py-3 text-sm text-[var(--text-muted)]">
+          No Ready-to-Dispatch ROs match {tech.name.split(" ")[0]} right now.
+        </div>
+      )}
+
+      {shown.length > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {shown.map((o, i) => (
+            <div
+              key={o.ro_id}
+              className="group relative rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="grid h-5 w-5 place-items-center rounded-full bg-[var(--brand,#2563eb)] text-[10px] font-bold text-white">
+                    {i + 1}
+                  </span>
+                  <span className="font-semibold text-[var(--text)]">RO {o.ro_number}</span>
+                </div>
+                <span className="cursor-default rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+                  Match {o.score}
+                </span>
+                <WhyTip o={o} />
+              </div>
+              <div className="mt-1 truncate text-sm text-[var(--text)]">
+                {o.vehicle} {o.concern_short && <span className="text-[var(--text-muted)]">· {o.concern_short}</span>}
+              </div>
+              <div className="mt-0.5 text-[11px] text-[var(--text-faint)]">
+                {o.priority && <>{TIER_LABEL[o.priority] ?? o.priority} · </>}
+                {o.est_hours ? `${o.est_hours}h` : "—"}
+                {o.is_flagged && <span className="font-semibold text-[var(--warn)]"> · Flag</span>}
+              </div>
+              <button
+                onClick={() => dispatch(o)}
+                disabled={busyRo != null}
+                className="mt-2 w-full rounded-md bg-[var(--brand,#2563eb)] py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              >
+                {busyRo === o.ro_id ? "Dispatching…" : `Dispatch to ${data?.initials ?? ""}`}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {data && data.total_matches > 3 && !showAll && (
+        <div className="mt-2 text-right">
+          <button
+            onClick={() => setShowAll(true)}
+            className="text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text)]"
+          >
+            Showing 1–{Math.min(3, opts.length)} of {data.total_matches}, ranked by match score — show more →
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TechTrack({
   tech,
   pctOf,
   hours,
+  isOpen,
+  onToggle,
 }: {
   tech: TechRow;
   pctOf: (m: number) => number;
   hours: number[];
+  isOpen: boolean;
+  onToggle: () => void;
 }) {
   const chip = tech.status_chip?.kind;
   const rowTint =
@@ -286,9 +505,14 @@ function TechTrack({
         </span>
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
-            <span className="truncate text-sm font-medium text-[var(--text)]">{tech.name}</span>
+            <Link
+              href={`/techs/${tech.id}`}
+              className="truncate text-sm font-medium text-[var(--text)] hover:text-[var(--brand,#2563eb)] hover:underline"
+            >
+              {tech.name}
+            </Link>
             {tech.status_chip && (
-              <span className={cn("rounded border px-1 py-0.5 text-[9px] font-bold uppercase", CHIP_STYLE[tech.status_chip.kind] ?? CHIP_STYLE.idle)}>
+              <span className={cn("rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase", CHIP_STYLE[tech.status_chip.kind] ?? CHIP_STYLE.idle)}>
                 {tech.status_chip.text}
               </span>
             )}
@@ -302,12 +526,23 @@ function TechTrack({
         </div>
       </div>
 
-      {/* track */}
-      <div className="relative h-8 flex-1">
+      {/* track — click the open area to dispatch a job to this tech */}
+      <div
+        className={cn(
+          "group relative h-8 flex-1 cursor-pointer rounded",
+          isOpen && "ring-1 ring-[var(--brand,#2563eb)]",
+        )}
+        onClick={onToggle}
+        title={`Dispatch a job to ${tech.name.split(" ")[0]}`}
+      >
         {/* hour gridlines */}
         {hours.map((m) => (
           <span key={m} className="absolute top-0 h-full w-px bg-[var(--border)]/50" style={{ left: `${pctOf(m)}%` }} />
         ))}
+        {/* hover hint in the open area */}
+        <span className="pointer-events-none absolute right-1 top-1/2 z-10 -translate-y-1/2 rounded bg-[var(--brand,#2563eb)] px-1.5 py-0.5 text-[9px] font-bold uppercase text-white opacity-0 transition-opacity group-hover:opacity-90">
+          {isOpen ? "✕ close" : "+ dispatch"}
+        </span>
         {/* blocks */}
         {tech.blocks.map((b, i) => {
           const left = pctOf(b.start_min);

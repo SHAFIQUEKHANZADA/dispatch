@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { api, ApiError } from "@/lib/api";
 import { Spinner, cn } from "@/components/ui";
 
@@ -192,6 +193,41 @@ export default function ScoreboardPage() {
   );
 }
 
+// Store-summary tiles — the big KPI cards above each board (STORE AVG / TOTAL
+// with a goal, colored green/red vs that goal). Matches the owner's header row.
+function StoreTiles({ data }: { data: Board }) {
+  const store = data.store ?? {};
+  const count = data.rows.length || 1;
+  const tiles = data.columns
+    .filter((c) => store[c.key] !== undefined && store[c.key] !== null)
+    .slice(0, 5);
+  if (tiles.length === 0) return null;
+  return (
+    <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      {tiles.map((c) => {
+        const v = store[c.key] ?? null;
+        // hours/counts are store TOTALS -> the goal is per-entity × the roster
+        // size; percents/money are STORE AVERAGES -> the per-entity goal stands.
+        const isTotal = c.kind === "hours" || c.key === "ro_count" || c.key === "cp_ros";
+        const goal = c.goal == null ? null : isTotal ? c.goal * count : c.goal;
+        const meets = goal == null || v == null ? null : c.higher ? v >= goal : v <= goal;
+        const color = meets == null ? "var(--text)" : meets ? "var(--good)" : "var(--danger)";
+        return (
+          <div key={c.key} className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 card-elev">
+            <div className="text-2xl font-extrabold leading-tight" style={{ color }}>{fmtVal(v, c.kind)}</div>
+            <div className="mt-0.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+              {c.header} · {isTotal ? "Total" : "Store Avg"}
+            </div>
+            {goal != null && (
+              <div className="text-[10px] text-[var(--text-faint)]">goal {fmtVal(Math.round(goal), c.kind)}</div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function Leaderboard({ data }: { data: Board }) {
   const isAdvisor = data.view === "advisors";
   // "Rank by" — re-sort the board by any column, live (matches the mockup).
@@ -234,6 +270,8 @@ function Leaderboard({ data }: { data: Board }) {
           {rows.length} {isAdvisor ? "advisors" : "technicians"}
         </span>
       </div>
+
+      <StoreTiles data={data} />
 
       <div className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] card-elev">
         <table className="w-full min-w-[900px] text-sm">
@@ -318,7 +356,23 @@ function ScoreRow({ row, columns }: { row: Row; columns: Column[] }) {
             {initials(row.name)}
           </span>
           <div>
-            <div className="font-semibold text-[var(--text)]">{row.name}</div>
+            {row.technician_id ? (
+              <Link
+                href={`/techs/${row.technician_id}`}
+                className="font-semibold text-[var(--text)] hover:text-[var(--brand,#2563eb)] hover:underline"
+              >
+                {row.name}
+              </Link>
+            ) : row.advisor_id ? (
+              <Link
+                href={`/advisors/${row.advisor_id}`}
+                className="font-semibold text-[var(--text)] hover:text-[var(--brand,#2563eb)] hover:underline"
+              >
+                {row.name}
+              </Link>
+            ) : (
+              <div className="font-semibold text-[var(--text)]">{row.name}</div>
+            )}
             {!row.qualifies && (
               <div className="text-[10px] font-medium uppercase text-[var(--warn)]" title={(row.data_issues ?? []).join(" · ")}>
                 Building sample
