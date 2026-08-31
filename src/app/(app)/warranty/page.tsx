@@ -75,14 +75,16 @@ export default function WarrantyPage() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  async function runBatch() {
+  async function runBatch(force = false) {
     setBusy(true);
     setError(null);
     setNote(null);
     try {
-      // Returns immediately: the server audits the not-yet-audited ROs in the
-      // background, so the browser never waits (and never times out mid-run).
-      const r = await api.post<{ message: string; queued: number }>("/warranty/audit/batch");
+      // Returns immediately: the server audits in the background, so the browser
+      // never waits (and never times out mid-run). force=true re-audits ROs that
+      // were already done — used after a fresh RO pull brings in new data.
+      const path = force ? "/warranty/audit/batch?force=true" : "/warranty/audit/batch";
+      const r = await api.post<{ message: string; queued: number }>(path);
       setNote(r.message);
       await load();
       if (r.queued > 0) pollForResults();
@@ -115,13 +117,23 @@ export default function WarrantyPage() {
             silently passed — missing data is flagged <b>Needs Review</b> with a reason.
           </p>
         </div>
-        <button
-          onClick={runBatch}
-          disabled={busy || !(data?.anthropic_configured ?? true)}
-          className="shrink-0 rounded-lg bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 disabled:opacity-50"
-        >
-          {busy ? "Auditing…" : "Audit warranty ROs"}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            onClick={() => runBatch(true)}
+            disabled={busy || !(data?.anthropic_configured ?? true)}
+            title="Re-audit every warranty RO, including ones already audited — use after pulling fresh RO data."
+            className="rounded-lg border border-[var(--brand)] px-4 py-2 text-sm font-semibold text-[var(--brand)] transition hover:bg-[var(--brand)]/10 disabled:opacity-50"
+          >
+            {busy ? "Working…" : "Re-audit all"}
+          </button>
+          <button
+            onClick={() => runBatch(false)}
+            disabled={busy || !(data?.anthropic_configured ?? true)}
+            className="rounded-lg bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 disabled:opacity-50"
+          >
+            {busy ? "Auditing…" : "Audit warranty ROs"}
+          </button>
+        </div>
       </div>
 
       {data && !data.anthropic_configured && (
